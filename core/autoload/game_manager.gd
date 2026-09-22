@@ -95,6 +95,13 @@ var games: Array[Dictionary] = [
 		"scene": "res://games/board/mahjong/mahjong.tscn",
 		"enabled": true,
 	},
+	{
+		"id": "chinese_checkers",
+		"title": "Damas Chinas",
+		"category": "mesa",
+		"scene": "res://games/board/chinese_checkers/chinese_checkers.tscn",
+		"enabled": true,
+	},
 ]
 
 var current_game_id: String = ""
