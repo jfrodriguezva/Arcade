@@ -132,6 +132,14 @@ var games: Array[Dictionary] = [
 		"scene": "res://games/arcade/arkanoid/arkanoid.tscn",
 		"enabled": true,
 	},
+	{
+		"id": "asteroids",
+		"title": "Asteroids",
+		"icon": "☄️",
+		"category": "arcade",
+		"scene": "res://games/arcade/asteroids/asteroids.tscn",
+		"enabled": true,
+	},
 ]
 
 var current_game_id: String = ""
