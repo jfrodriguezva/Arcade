@@ -1,0 +1,15 @@
+# Godot 4 ignores
+.godot/
+.import/
+export.cfg
+export_presets.cfg
+*.translation
+mono_crash.*.json
+
+# Exports
+/build/
+/export/
+
+# OS
+.DS_Store
+Thumbs.db
