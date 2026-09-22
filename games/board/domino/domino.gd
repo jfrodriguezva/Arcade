@@ -65,7 +65,7 @@ func _build_ui() -> void:
 	vbox.add_child(info_label)
 
 	var chain_panel := PanelContainer.new()
-	chain_panel.custom_minimum_size = Vector2(0, 90)
+	chain_panel.custom_minimum_size = Vector2(0, 150)
 	chain_panel.add_theme_stylebox_override("panel", UIKit.stylebox(UIKit.COLOR_PANEL, UIKit.COLOR_ACCENT_3, 14, 2))
 	vbox.add_child(chain_panel)
 	var chain_margin := MarginContainer.new()
@@ -98,10 +98,10 @@ func _build_ui() -> void:
 	vbox.add_child(UIKit.title_label("Tu mano", 16, UIKit.COLOR_TEXT_DIM))
 
 	var hand_scroll := ScrollContainer.new()
-	hand_scroll.custom_minimum_size = Vector2(0, 90)
+	hand_scroll.custom_minimum_size = Vector2(0, 150)
 	vbox.add_child(hand_scroll)
 	hand_row = HBoxContainer.new()
-	hand_row.add_theme_constant_override("separation", 6)
+	hand_row.add_theme_constant_override("separation", 8)
 	hand_scroll.add_child(hand_row)
 
 	var actions_row := HBoxContainer.new()
@@ -173,7 +173,7 @@ func _redraw_all() -> void:
 	else:
 		for tile: Dictionary in chain:
 			var t := DominoTile.new()
-			t.custom_minimum_size = Vector2(56, 70)
+			t.custom_minimum_size = Vector2(90, 128)
 			t.disabled = true
 			t.set_values(tile["a"], tile["b"], true)
 			chain_row.add_child(t)
@@ -190,7 +190,7 @@ func _redraw_all() -> void:
 	for i in range(player_hand.size()):
 		var tile: Dictionary = player_hand[i]
 		var t := DominoTile.new()
-		t.custom_minimum_size = Vector2(56, 100)
+		t.custom_minimum_size = Vector2(90, 130)
 		t.set_values(tile["a"], tile["b"], true)
 		t.set_highlighted(i == selected_tile_index)
 		t.pressed.connect(_on_hand_tile_pressed.bind(i))

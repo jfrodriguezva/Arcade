@@ -201,3 +201,38 @@ static func show_setup_overlay(root: Control, title: String, allow_pvp: bool, al
 		on_confirm.call(state.duplicate())
 	)
 	vbox.add_child(start_btn)
+
+
+static func animate_dice_label(node: Node, label: Label, final_value: int, prefix: String = "🎲 ", duration: float = 0.45) -> void:
+	## Hace parpadear el dado por valores al azar antes de mostrar el resultado final.
+	var ticks := 7
+	var interval: float = duration / ticks
+	for i in range(ticks):
+		label.text = prefix + str(randi() % 6 + 1)
+		await node.get_tree().create_timer(interval).timeout
+	label.text = prefix + str(final_value)
+
+
+static func animate_dice_pair(node: Node, label: Label, final_values: Array, prefix: String = "🎲 ", duration: float = 0.45) -> void:
+	var ticks := 7
+	var interval: float = duration / ticks
+	for i in range(ticks):
+		var fake: Array = []
+		for v in final_values:
+			fake.append(randi() % 6 + 1)
+		label.text = prefix + str(fake)
+		await node.get_tree().create_timer(interval).timeout
+	label.text = prefix + str(final_values)
+
+
+static func animate_dice_buttons(node: Node, buttons: Array, final_values: Array, held: Array, duration: float = 0.45) -> void:
+	var ticks := 7
+	var interval: float = duration / ticks
+	for t in range(ticks):
+		for i in range(buttons.size()):
+			if i < held.size() and not held[i]:
+				buttons[i].text = str(randi() % 6 + 1)
+		await node.get_tree().create_timer(interval).timeout
+	for i in range(buttons.size()):
+		if i < held.size() and not held[i]:
+			buttons[i].text = str(final_values[i])

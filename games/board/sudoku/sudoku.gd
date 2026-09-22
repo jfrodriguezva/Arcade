@@ -10,8 +10,11 @@ const HELP_TEXT := "Completa la cuadrícula 9x9 con números del 1 al 9, sin rep
 - Toca una celda vacía para seleccionarla.
 - Toca un número del teclado de abajo para escribirlo (o ⌫ para borrar).
 - Los números correctos se muestran en blanco; si te equivocas se muestran en rojo como pista.
+- Tienes hasta 5 errores; al llegar al quinto, pierdes esa partida.
 
 La dificultad controla cuántas celdas vienen ya llenas al empezar: más pistas = más fácil."
+
+const MAX_MISTAKES := 5
 
 var solution: Array = []
 var puzzle: Array = []
@@ -19,8 +22,10 @@ var given: Array = []
 var selected_index: int = -1
 var difficulty: String = "medium"
 var game_over: bool = false
+var mistakes: int = 0
 
 var status_label: Label
+var mistakes_label: Label
 var cell_buttons: Array = []
 
 
@@ -55,6 +60,9 @@ func _build_ui() -> void:
 
 	status_label = UIKit.title_label("", 18, UIKit.COLOR_TEXT)
 	vbox.add_child(status_label)
+
+	mistakes_label = UIKit.title_label("", 15, UIKit.COLOR_TEXT_DIM)
+	vbox.add_child(mistakes_label)
 
 	var board_panel := PanelContainer.new()
 	board_panel.add_theme_stylebox_override("panel", UIKit.stylebox(UIKit.COLOR_PANEL, UIKit.COLOR_ACCENT_3, 16, 3))
@@ -94,8 +102,8 @@ func _build_ui() -> void:
 				var col: int = box_col + local_c
 				var index: int = row * 9 + col
 				var cell := Button.new()
-				cell.custom_minimum_size = Vector2(36, 36)
-				cell.add_theme_font_size_override("font_size", 18)
+				cell.custom_minimum_size = Vector2(58, 58)
+				cell.add_theme_font_size_override("font_size", 26)
 				UIKit.style_button(cell, UIKit.COLOR_BG_LIGHT, 4)
 				cell.pressed.connect(_on_cell_pressed.bind(index))
 				box_grid.add_child(cell)
@@ -143,8 +151,10 @@ func _new_game() -> void:
 
 	selected_index = -1
 	game_over = false
+	mistakes = 0
 	status_label.text = "Completa la cuadrícula"
 	status_label.add_theme_color_override("font_color", UIKit.COLOR_TEXT)
+	_update_mistakes_label()
 	_redraw_all()
 
 
@@ -202,40 +212,63 @@ func _make_puzzle(sol: Array, keep: int) -> Array:
 
 func _redraw_all() -> void:
 	for i in range(81):
-		var cell: Button = cell_buttons[i]
-		var value: int = puzzle[i]
-		var is_given: bool = given[i]
-		var is_selected: bool = i == selected_index
+		_redraw_cell(i)
 
-		cell.text = str(value) if value != 0 else ""
-		cell.disabled = is_given
 
-		var border: Color = UIKit.COLOR_ACCENT_3 if is_selected else Color(0, 0, 0, 0)
-		var bw: int = 3 if is_selected else 0
-		UIKit.style_button(cell, UIKit.COLOR_BG_LIGHT, 4)
-		cell.add_theme_stylebox_override("normal", UIKit.stylebox(UIKit.COLOR_PANEL if is_given else UIKit.COLOR_BG_LIGHT, border, 4, bw))
-		cell.add_theme_stylebox_override("disabled", UIKit.stylebox(UIKit.COLOR_PANEL, border, 4, bw))
+func _redraw_cell(i: int) -> void:
+	var cell: Button = cell_buttons[i]
+	var value: int = puzzle[i]
+	var is_given: bool = given[i]
+	var is_selected: bool = i == selected_index
 
-		if is_given:
-			cell.add_theme_color_override("font_disabled_color", UIKit.COLOR_TEXT_DIM)
-		elif value != 0 and value != solution[i]:
-			cell.add_theme_color_override("font_color", UIKit.COLOR_DANGER)
-		else:
-			cell.add_theme_color_override("font_color", UIKit.COLOR_TEXT)
+	cell.text = str(value) if value != 0 else ""
+	cell.disabled = is_given
+
+	var border: Color = UIKit.COLOR_ACCENT_3 if is_selected else Color(0, 0, 0, 0)
+	var bw: int = 3 if is_selected else 0
+	var bg: Color = UIKit.COLOR_PANEL if is_given else UIKit.COLOR_BG_LIGHT
+	var sb: StyleBoxFlat = UIKit.stylebox(bg, border, 4, bw)
+	cell.add_theme_stylebox_override("normal", sb)
+	cell.add_theme_stylebox_override("hover", sb)
+	cell.add_theme_stylebox_override("disabled", sb)
+
+	if is_given:
+		cell.add_theme_color_override("font_disabled_color", UIKit.COLOR_TEXT_DIM)
+	elif value != 0 and value != solution[i]:
+		cell.add_theme_color_override("font_color", UIKit.COLOR_DANGER)
+	else:
+		cell.add_theme_color_override("font_color", UIKit.COLOR_TEXT)
+
+
+func _update_mistakes_label() -> void:
+	mistakes_label.text = "Errores: %d/%d" % [mistakes, MAX_MISTAKES]
+	mistakes_label.add_theme_color_override("font_color", UIKit.COLOR_DANGER if mistakes > 0 else UIKit.COLOR_TEXT_DIM)
 
 
 func _on_cell_pressed(index: int) -> void:
 	if game_over or given[index]:
 		return
+	var previous: int = selected_index
 	selected_index = -1 if selected_index == index else index
-	_redraw_all()
+	if previous != -1:
+		_redraw_cell(previous)
+	_redraw_cell(index)
 
 
 func _on_number_pressed(n: int) -> void:
 	if game_over or selected_index == -1 or given[selected_index]:
 		return
 	puzzle[selected_index] = n
-	_redraw_all()
+	if n != 0 and n != solution[selected_index]:
+		mistakes += 1
+		_update_mistakes_label()
+
+	var i: int = selected_index
+	_redraw_cell(i)
+
+	if mistakes >= MAX_MISTAKES:
+		_end_game_loss()
+		return
 	_check_win()
 
 
@@ -246,11 +279,17 @@ func _check_win() -> void:
 	game_over = true
 	status_label.text = "¡Sudoku completo!"
 	status_label.add_theme_color_override("font_color", UIKit.COLOR_ACCENT_3)
-	_record_result()
+	_record_result("completed_%s" % difficulty)
 
 
-func _record_result() -> void:
+func _end_game_loss() -> void:
+	game_over = true
+	status_label.text = "Llegaste a %d errores. ¡Inténtalo de nuevo!" % MAX_MISTAKES
+	status_label.add_theme_color_override("font_color", UIKit.COLOR_DANGER)
+	_record_result("failed_%s" % difficulty)
+
+
+func _record_result(key: String) -> void:
 	var stats: Dictionary = SaveManager.get_game_data(GAME_ID)
-	var key: String = "completed_%s" % difficulty
 	stats[key] = stats.get(key, 0) + 1
 	SaveManager.set_game_data(GAME_ID, stats)

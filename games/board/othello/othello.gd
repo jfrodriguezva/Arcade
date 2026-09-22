@@ -28,6 +28,7 @@ Si no tienes ningún movimiento válido, se pasa el turno automáticamente. El j
 
 var board: Array = []
 var cell_buttons: Array = []
+var piece_views: Array = []
 var current_turn: String = "player"
 var game_over: bool = false
 var mode: String = "pve"
@@ -89,15 +90,21 @@ func _build_ui() -> void:
 
 	for y in range(SIZE):
 		var row: Array = []
+		var piece_row: Array = []
 		for x in range(SIZE):
 			var cell := Button.new()
-			cell.custom_minimum_size = Vector2(38, 38)
-			cell.add_theme_font_size_override("font_size", 20)
+			cell.custom_minimum_size = Vector2(72, 72)
 			UIKit.style_button(cell, UIKit.COLOR_BG_LIGHT, 6)
 			cell.pressed.connect(_on_cell_pressed.bind(x, y))
 			grid.add_child(cell)
 			row.append(cell)
+
+			var piece := GamePiece.new()
+			piece.set_anchors_preset(Control.PRESET_FULL_RECT)
+			cell.add_child(piece)
+			piece_row.append(piece)
 		cell_buttons.append(row)
+		piece_views.append(piece_row)
 
 	var restart_btn := Button.new()
 	restart_btn.text = "↻  Nueva partida / Modo"
@@ -188,17 +195,30 @@ func _count(owner: String) -> int:
 
 
 func _redraw_all() -> void:
+	var can_act: bool = mode == "pvp" or current_turn == "player"
+	var legal: Array = _legal_moves(current_turn) if (not game_over and can_act) else []
+
 	for y in range(SIZE):
 		for x in range(SIZE):
 			var cell: Button = cell_buttons[y][x]
+			var piece: GamePiece = piece_views[y][x]
 			var v: Variant = board[y][x]
+
 			if v == null:
-				cell.text = ""
+				piece.hide_piece()
 			else:
-				cell.text = "●"
 				var color: Color = UIKit.COLOR_ACCENT if v == "player" else UIKit.COLOR_ACCENT_2
-				cell.add_theme_color_override("font_color", color)
-				cell.add_theme_color_override("font_disabled_color", color)
+				piece.set_piece(color)
+
+			var is_legal: bool = legal.has(Vector2i(x, y))
+			var bg: Color = UIKit.COLOR_ACCENT_3.lerp(UIKit.COLOR_BG_LIGHT, 0.6) if is_legal else UIKit.COLOR_BG_LIGHT
+			var border: Color = UIKit.COLOR_ACCENT_3 if is_legal else Color(0, 0, 0, 0)
+			var bw: int = 2 if is_legal else 0
+			var sb: StyleBoxFlat = UIKit.stylebox(bg, border, 6, bw)
+			cell.add_theme_stylebox_override("normal", sb)
+			cell.add_theme_stylebox_override("hover", sb)
+			cell.add_theme_stylebox_override("disabled", sb)
+
 	score_label.text = "Tú: %d      Máquina: %d" % [_count("player"), _count("bot")]
 
 

@@ -20,6 +20,20 @@ const DECK := [
 	"La Palma", "La Maceta", "El Arpa", "La Rana",
 ]
 
+const ICONS := {
+	"El Gallo": "🐓", "El Diablito": "😈", "La Dama": "👸", "El Catrín": "🎩", "El Paraguas": "☂️",
+	"La Sirena": "🧜", "La Escalera": "🪜", "La Botella": "🍾", "El Barril": "🛢️", "El Árbol": "🌳",
+	"El Melón": "🍈", "El Valiente": "🗡️", "El Gorrito": "🧢", "La Muerte": "💀", "La Pera": "🍐",
+	"La Bandera": "🚩", "El Bandolón": "🎸", "El Violoncello": "🎻", "La Garza": "🦢", "El Pájaro": "🐦",
+	"La Mano": "✋", "La Bota": "🥾", "La Luna": "🌙", "El Cotorro": "🦜", "El Borracho": "🍺",
+	"El Negrito": "🧑", "El Corazón": "❤️", "La Sandía": "🍉", "El Tambor": "🥁", "El Camarón": "🦐",
+	"Las Jaras": "🏹", "El Músico": "🎺", "La Araña": "🕷️", "El Soldado": "💂", "La Estrella": "⭐",
+	"El Cazo": "🍲", "El Mundo": "🌍", "El Apache": "🪶", "El Nopal": "🌵", "El Alacrán": "🦂",
+	"La Rosa": "🌹", "La Calavera": "☠️", "La Campana": "🔔", "El Cantarito": "🏺", "El Venado": "🦌",
+	"El Sol": "☀️", "La Corona": "👑", "La Chalupa": "🛶", "El Pino": "🌲", "El Pescado": "🐟",
+	"La Palma": "🌴", "La Maceta": "🪴", "El Arpa": "🎶", "La Rana": "🐸",
+}
+
 const HELP_TEXT := "Tú y la máquina reciben una tabla de 16 cartas cada uno, tomadas al azar del mazo de 54.
 
 - Toca 'Cantar siguiente' para revelar la próxima carta del mazo.
@@ -80,7 +94,7 @@ func _build_ui() -> void:
 	for side: String in ["margin_left", "margin_right", "margin_top", "margin_bottom"]:
 		call_margin.add_theme_constant_override(side, 14)
 	call_panel.add_child(call_margin)
-	call_label = UIKit.title_label("—", 26, UIKit.COLOR_ACCENT_3)
+	call_label = UIKit.title_label("—", 42, UIKit.COLOR_ACCENT_3)
 	call_margin.add_child(call_label)
 
 	call_btn = Button.new()
@@ -111,8 +125,8 @@ func _build_ui() -> void:
 
 	for i in range(16):
 		var btn := Button.new()
-		btn.custom_minimum_size = Vector2(78, 64)
-		btn.add_theme_font_size_override("font_size", 11)
+		btn.custom_minimum_size = Vector2(150, 110)
+		btn.add_theme_font_size_override("font_size", 15)
 		btn.autowrap_mode = TextServer.AUTOWRAP_WORD
 		UIKit.style_button(btn, UIKit.COLOR_BG_LIGHT, 8)
 		btn.pressed.connect(_on_card_pressed.bind(i))
@@ -154,7 +168,7 @@ func _new_game() -> void:
 
 
 func _redraw_all() -> void:
-	call_label.text = current_call if current_call != "" else "—"
+	call_label.text = "%s\n%s" % [ICONS.get(current_call, "🃏"), current_call] if current_call != "" else "—"
 	call_btn.disabled = game_over or call_index >= call_order.size()
 
 	var bot_count := 0
@@ -166,7 +180,7 @@ func _redraw_all() -> void:
 	for i in range(16):
 		var btn: Button = board_buttons[i]
 		var name: String = player_board[i]
-		btn.text = name
+		btn.text = "%s\n%s" % [ICONS.get(name, "🃏"), name]
 		if player_marked[i]:
 			UIKit.style_button(btn, UIKit.COLOR_ACCENT_3, 8)
 			btn.add_theme_color_override("font_color", UIKit.COLOR_BG)
