@@ -81,6 +81,13 @@ var games: Array[Dictionary] = [
 		"scene": "res://games/board/generala/generala.tscn",
 		"enabled": true,
 	},
+	{
+		"id": "parchis",
+		"title": "Parchís",
+		"category": "mesa",
+		"scene": "res://games/board/parchis/parchis.tscn",
+		"enabled": true,
+	},
 ]
 
 var current_game_id: String = ""
