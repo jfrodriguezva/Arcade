@@ -180,6 +180,14 @@ var games: Array[Dictionary] = [
 		"scene": "res://games/arcade/gunslinger/gunslinger.tscn",
 		"enabled": true,
 	},
+	{
+		"id": "galaga_swarm",
+		"title": "Enjambre Estelar",
+		"icon": "🛸",
+		"category": "arcade",
+		"scene": "res://games/arcade/galaga_swarm/galaga_swarm.tscn",
+		"enabled": true,
+	},
 ]
 
 var current_game_id: String = ""
