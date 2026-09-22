@@ -26,7 +26,7 @@ var current_turn: String = "player"
 var game_over: bool = false
 
 var status_label: Label
-var chain_label: Label
+var chain_row: HBoxContainer
 var info_label: Label
 var hand_row: HBoxContainer
 var end_left_btn: Button
@@ -65,18 +65,18 @@ func _build_ui() -> void:
 	vbox.add_child(info_label)
 
 	var chain_panel := PanelContainer.new()
+	chain_panel.custom_minimum_size = Vector2(0, 90)
 	chain_panel.add_theme_stylebox_override("panel", UIKit.stylebox(UIKit.COLOR_PANEL, UIKit.COLOR_ACCENT_3, 14, 2))
 	vbox.add_child(chain_panel)
 	var chain_margin := MarginContainer.new()
 	for side: String in ["margin_left", "margin_right", "margin_top", "margin_bottom"]:
-		chain_margin.add_theme_constant_override(side, 12)
+		chain_margin.add_theme_constant_override(side, 10)
 	chain_panel.add_child(chain_margin)
-	chain_label = Label.new()
-	chain_label.autowrap_mode = TextServer.AUTOWRAP_WORD
-	chain_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	chain_label.add_theme_font_size_override("font_size", 20)
-	chain_label.add_theme_color_override("font_color", UIKit.COLOR_TEXT)
-	chain_margin.add_child(chain_label)
+	var chain_scroll := ScrollContainer.new()
+	chain_margin.add_child(chain_scroll)
+	chain_row = HBoxContainer.new()
+	chain_row.add_theme_constant_override("separation", 3)
+	chain_scroll.add_child(chain_row)
 
 	var ends_row := HBoxContainer.new()
 	ends_row.alignment = BoxContainer.ALIGNMENT_CENTER
@@ -165,18 +165,18 @@ func _new_game() -> void:
 		_bot_turn()
 
 
-func _tile_text(tile: Dictionary) -> String:
-	return "%d|%d" % [tile["a"], tile["b"]]
-
-
 func _redraw_all() -> void:
+	for child: Node in chain_row.get_children():
+		child.queue_free()
 	if chain.is_empty():
-		chain_label.text = "(vacío, coloca la primera ficha)"
+		chain_row.add_child(UIKit.title_label("(vacío, coloca la primera ficha)", 14, UIKit.COLOR_TEXT_DIM))
 	else:
-		var parts: Array = []
 		for tile: Dictionary in chain:
-			parts.append(_tile_text(tile))
-		chain_label.text = " - ".join(parts)
+			var t := DominoTile.new()
+			t.custom_minimum_size = Vector2(56, 70)
+			t.disabled = true
+			t.set_values(tile["a"], tile["b"], true)
+			chain_row.add_child(t)
 
 	if chain.is_empty():
 		end_left_btn.text = "Colocar ficha"
@@ -189,14 +189,12 @@ func _redraw_all() -> void:
 		child.queue_free()
 	for i in range(player_hand.size()):
 		var tile: Dictionary = player_hand[i]
-		var btn := Button.new()
-		btn.text = _tile_text(tile)
-		btn.custom_minimum_size = Vector2(64, 64)
-		btn.add_theme_font_size_override("font_size", 18)
-		var accent: Color = UIKit.COLOR_ACCENT_3 if i == selected_tile_index else UIKit.COLOR_ACCENT
-		UIKit.style_button(btn, accent, 10)
-		btn.pressed.connect(_on_hand_tile_pressed.bind(i))
-		hand_row.add_child(btn)
+		var t := DominoTile.new()
+		t.custom_minimum_size = Vector2(56, 100)
+		t.set_values(tile["a"], tile["b"], true)
+		t.set_highlighted(i == selected_tile_index)
+		t.pressed.connect(_on_hand_tile_pressed.bind(i))
+		hand_row.add_child(t)
 
 	info_label.text = "Máquina: %d fichas      Pozo: %d fichas" % [bot_hand.size(), boneyard.size()]
 

@@ -91,3 +91,113 @@ static func add_help_button(toolbar: Control, root: Control, title: String, body
 	style_button(btn, COLOR_ACCENT_3)
 	btn.pressed.connect(func() -> void: dialog.popup_centered())
 	toolbar.add_child(btn)
+
+
+const DIFFICULTY_LABELS := {"easy": "Fácil", "medium": "Medio", "hard": "Difícil"}
+
+
+static func show_setup_overlay(root: Control, title: String, allow_pvp: bool, allow_difficulty: bool, on_confirm: Callable) -> void:
+	## Pantalla previa a cada juego con IA: elegir Humano vs Máquina (o 2 jugadores)
+	## y el nivel de dificultad. Llama a on_confirm({"mode":"pve"/"pvp","difficulty":"easy"/"medium"/"hard"}).
+	var overlay := Control.new()
+	overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
+	overlay.mouse_filter = Control.MOUSE_FILTER_STOP
+	root.add_child(overlay)
+
+	var bg := ColorRect.new()
+	bg.color = Color(COLOR_BG.r, COLOR_BG.g, COLOR_BG.b, 0.97)
+	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
+	overlay.add_child(bg)
+
+	var center := CenterContainer.new()
+	center.set_anchors_preset(Control.PRESET_FULL_RECT)
+	overlay.add_child(center)
+
+	var panel := PanelContainer.new()
+	panel.add_theme_stylebox_override("panel", stylebox(COLOR_PANEL, COLOR_ACCENT_3, 20, 3))
+	center.add_child(panel)
+
+	var margin := MarginContainer.new()
+	for side: String in ["margin_left", "margin_right", "margin_top", "margin_bottom"]:
+		margin.add_theme_constant_override(side, 28)
+	panel.add_child(margin)
+
+	var vbox := VBoxContainer.new()
+	vbox.alignment = BoxContainer.ALIGNMENT_CENTER
+	vbox.add_theme_constant_override("separation", 14)
+	margin.add_child(vbox)
+
+	vbox.add_child(title_label(title, 26, COLOR_ACCENT_3))
+
+	var state := {"mode": "pve", "difficulty": "medium"}
+
+	var mode_label := title_label("Modo de juego", 15, COLOR_TEXT_DIM)
+	var mode_row := HBoxContainer.new()
+	mode_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	mode_row.add_theme_constant_override("separation", 10)
+
+	var pve_btn := Button.new()
+	pve_btn.text = "Vs Máquina"
+	pve_btn.custom_minimum_size = Vector2(140, 44)
+	var pvp_btn := Button.new()
+	pvp_btn.text = "2 Jugadores"
+	pvp_btn.custom_minimum_size = Vector2(140, 44)
+
+	var diff_label := title_label("Dificultad", 15, COLOR_TEXT_DIM)
+	var diff_row := HBoxContainer.new()
+	diff_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	diff_row.add_theme_constant_override("separation", 8)
+
+	var easy_btn := Button.new()
+	easy_btn.text = "Fácil"
+	easy_btn.custom_minimum_size = Vector2(88, 40)
+	var medium_btn := Button.new()
+	medium_btn.text = "Medio"
+	medium_btn.custom_minimum_size = Vector2(88, 40)
+	var hard_btn := Button.new()
+	hard_btn.text = "Difícil"
+	hard_btn.custom_minimum_size = Vector2(88, 40)
+
+	var refresh_mode: Callable = func() -> void:
+		style_button(pve_btn, COLOR_ACCENT if state["mode"] == "pve" else COLOR_TEXT_DIM)
+		style_button(pvp_btn, COLOR_ACCENT if state["mode"] == "pvp" else COLOR_TEXT_DIM)
+		var show_diff: bool = allow_difficulty and state["mode"] == "pve"
+		diff_row.visible = show_diff
+		diff_label.visible = show_diff
+
+	var refresh_diff: Callable = func() -> void:
+		style_button(easy_btn, COLOR_ACCENT_2 if state["difficulty"] == "easy" else COLOR_TEXT_DIM)
+		style_button(medium_btn, COLOR_ACCENT_2 if state["difficulty"] == "medium" else COLOR_TEXT_DIM)
+		style_button(hard_btn, COLOR_ACCENT_2 if state["difficulty"] == "hard" else COLOR_TEXT_DIM)
+
+	pve_btn.pressed.connect(func() -> void: state["mode"] = "pve"; refresh_mode.call())
+	pvp_btn.pressed.connect(func() -> void: state["mode"] = "pvp"; refresh_mode.call())
+	easy_btn.pressed.connect(func() -> void: state["difficulty"] = "easy"; refresh_diff.call())
+	medium_btn.pressed.connect(func() -> void: state["difficulty"] = "medium"; refresh_diff.call())
+	hard_btn.pressed.connect(func() -> void: state["difficulty"] = "hard"; refresh_diff.call())
+
+	if allow_pvp:
+		vbox.add_child(mode_label)
+		mode_row.add_child(pve_btn)
+		mode_row.add_child(pvp_btn)
+		vbox.add_child(mode_row)
+
+	if allow_difficulty:
+		diff_row.add_child(easy_btn)
+		diff_row.add_child(medium_btn)
+		diff_row.add_child(hard_btn)
+		vbox.add_child(diff_label)
+		vbox.add_child(diff_row)
+
+	refresh_mode.call()
+	refresh_diff.call()
+
+	var start_btn := Button.new()
+	start_btn.text = "▶  Comenzar"
+	start_btn.custom_minimum_size = Vector2(200, 50)
+	style_button(start_btn, COLOR_ACCENT_3)
+	start_btn.pressed.connect(func() -> void:
+		overlay.queue_free()
+		on_confirm.call(state.duplicate())
+	)
+	vbox.add_child(start_btn)

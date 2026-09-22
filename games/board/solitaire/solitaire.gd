@@ -22,8 +22,8 @@ var tableau: Array = []
 var selected: Dictionary = {}
 
 var status_label: Label
-var stock_btn: Button
-var waste_btn: Button
+var stock_btn: PlayingCard
+var waste_btn: PlayingCard
 var foundation_buttons: Dictionary = {}
 var tableau_containers: Array = []
 
@@ -95,12 +95,11 @@ func _build_ui() -> void:
 	vbox.add_child(restart_btn)
 
 
-func _make_card_button() -> Button:
-	var btn := Button.new()
-	btn.custom_minimum_size = Vector2(64, 90)
-	btn.add_theme_font_size_override("font_size", 18)
-	UIKit.style_button(btn, UIKit.COLOR_BG_LIGHT, 10)
-	return btn
+func _make_card_button() -> PlayingCard:
+	var card := PlayingCard.new()
+	card.custom_minimum_size = Vector2(64, 90)
+	card.set_empty()
+	return card
 
 
 func _build_deck() -> Array:
@@ -132,15 +131,6 @@ func _new_game() -> void:
 	_redraw_all()
 
 
-func _rank_label(rank: int) -> String:
-	match rank:
-		1: return "A"
-		11: return "J"
-		12: return "Q"
-		13: return "K"
-		_: return str(rank)
-
-
 func _redraw_all() -> void:
 	if stock.is_empty():
 		_render_empty(stock_btn, "↻")
@@ -155,7 +145,7 @@ func _redraw_all() -> void:
 
 	for suit: String in SUITS:
 		var pile: Array = foundations[suit]
-		var btn: Button = foundation_buttons[suit]
+		var btn: PlayingCard = foundation_buttons[suit]
 		if pile.is_empty():
 			_render_empty(btn, suit)
 		else:
@@ -185,37 +175,28 @@ func _redraw_all() -> void:
 				btn.pressed.connect(_on_tableau_pressed.bind(col))
 				container.add_child(btn)
 			else:
-				var strip := Panel.new()
+				var strip := PlayingCard.new()
 				strip.custom_minimum_size = Vector2(64, 24)
-				strip.size = Vector2(64, 24)
-				strip.add_theme_stylebox_override("panel", UIKit.stylebox(UIKit.COLOR_ACCENT_2, Color(0, 0, 0, 0), 6))
+				strip.disabled = true
+				strip.set_card(0, "♠", false)
 				strip.position = Vector2(0, y)
 				container.add_child(strip)
 
 
-func _render_card(btn: Button, card: Dictionary, highlighted: bool = false) -> void:
-	var is_red: bool = RED_SUITS.has(card["suit"])
-	btn.text = "%s\n%s" % [_rank_label(card["rank"]), card["suit"]]
-	btn.disabled = false
-	UIKit.style_button(btn, UIKit.COLOR_PANEL, 10)
-	var border: Color = UIKit.COLOR_ACCENT_3 if highlighted else UIKit.COLOR_PANEL
-	btn.add_theme_stylebox_override("normal", UIKit.stylebox(UIKit.COLOR_PANEL, border, 10, 3 if highlighted else 1))
-	var color: Color = UIKit.COLOR_ACCENT if is_red else UIKit.COLOR_TEXT
-	btn.add_theme_color_override("font_color", color)
-	btn.add_theme_color_override("font_hover_color", color)
-	btn.add_theme_color_override("font_disabled_color", color)
+func _render_card(card_view: PlayingCard, card: Dictionary, highlighted: bool = false) -> void:
+	card_view.disabled = false
+	card_view.set_card(card["rank"], card["suit"], true)
+	card_view.set_highlighted(highlighted)
 
 
-func _render_empty(btn: Button, hint: String) -> void:
-	btn.text = hint
-	btn.disabled = false
-	UIKit.style_button(btn, UIKit.COLOR_BG_LIGHT, 10)
+func _render_empty(card_view: PlayingCard, hint: String) -> void:
+	card_view.disabled = false
+	card_view.set_empty(hint)
 
 
-func _render_back(btn: Button) -> void:
-	btn.text = "🂠"
-	btn.disabled = false
-	UIKit.style_button(btn, UIKit.COLOR_ACCENT_2, 10)
+func _render_back(card_view: PlayingCard) -> void:
+	card_view.disabled = false
+	card_view.set_card(0, "♠", false)
 
 
 func _on_stock_pressed() -> void:
