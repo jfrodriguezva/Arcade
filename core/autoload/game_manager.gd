@@ -124,6 +124,14 @@ var games: Array[Dictionary] = [
 		"scene": "res://games/board/backgammon/backgammon.tscn",
 		"enabled": true,
 	},
+	{
+		"id": "arkanoid",
+		"title": "Arkanoid",
+		"icon": "🧱",
+		"category": "arcade",
+		"scene": "res://games/arcade/arkanoid/arkanoid.tscn",
+		"enabled": true,
+	},
 ]
 
 var current_game_id: String = ""
