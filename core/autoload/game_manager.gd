@@ -140,6 +140,14 @@ var games: Array[Dictionary] = [
 		"scene": "res://games/arcade/asteroids/asteroids.tscn",
 		"enabled": true,
 	},
+	{
+		"id": "block_stacker",
+		"title": "Bloques",
+		"icon": "🟦",
+		"category": "arcade",
+		"scene": "res://games/arcade/block_stacker/block_stacker.tscn",
+		"enabled": true,
+	},
 ]
 
 var current_game_id: String = ""
