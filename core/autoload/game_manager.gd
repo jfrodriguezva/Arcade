@@ -60,6 +60,13 @@ var games: Array[Dictionary] = [
 		"scene": "res://games/board/chess/chess.tscn",
 		"enabled": true,
 	},
+	{
+		"id": "sudoku",
+		"title": "Sudoku",
+		"category": "mesa",
+		"scene": "res://games/board/sudoku/sudoku.tscn",
+		"enabled": true,
+	},
 ]
 
 var current_game_id: String = ""
