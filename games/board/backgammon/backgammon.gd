@@ -133,8 +133,8 @@ func _build_ui() -> void:
 
 func _make_point_button(parent: GridContainer, p: int) -> Button:
 	var btn := Button.new()
-	btn.custom_minimum_size = Vector2(28, 52)
-	btn.add_theme_font_size_override("font_size", 9)
+	btn.custom_minimum_size = Vector2(48, 84)
+	btn.add_theme_font_size_override("font_size", 14)
 	btn.pressed.connect(_on_point_pressed.bind(p))
 	parent.add_child(btn)
 	return btn
@@ -250,16 +250,15 @@ func _has_any_legal_move(owner: String) -> bool:
 	return false
 
 
-func _roll_dice() -> void:
-	var a: int = randi() % 6 + 1
-	var b: int = randi() % 6 + 1
-	dice = [a, a, a, a] if a == b else [a, b]
-
-
 func _start_turn() -> void:
 	selected_point = -1
-	_roll_dice()
+	var a: int = randi() % 6 + 1
+	var b: int = randi() % 6 + 1
+	dice = []
 	_update_turn_status()
+	_redraw_all()
+	await UIKit.animate_dice_pair(self, dice_label, [a, b])
+	dice = [a, a, a, a] if a == b else [a, b]
 	_redraw_all()
 
 	if not _has_any_legal_move(current_turn):

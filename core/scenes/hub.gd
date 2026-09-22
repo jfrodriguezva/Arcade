@@ -103,9 +103,23 @@ func _refresh_grid() -> void:
 
 func _build_game_card(game: Dictionary) -> Control:
 	var btn := Button.new()
-	btn.text = "\n%s\n" % game.get("title", game.get("id", "?"))
-	btn.custom_minimum_size = Vector2(300, 120)
-	btn.add_theme_font_size_override("font_size", 22)
+	btn.custom_minimum_size = Vector2(300, 130)
 	UIKit.style_button(btn, CATEGORY_ACCENTS.get(game.get("category", ""), UIKit.COLOR_ACCENT), 18)
 	btn.pressed.connect(func() -> void: GameManager.go_to_game(game["id"]))
+
+	var inner := VBoxContainer.new()
+	inner.set_anchors_preset(Control.PRESET_FULL_RECT)
+	inner.alignment = BoxContainer.ALIGNMENT_CENTER
+	inner.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	inner.add_theme_constant_override("separation", 4)
+	btn.add_child(inner)
+
+	var icon_label := UIKit.title_label(game.get("icon", "🎮"), 40, UIKit.COLOR_TEXT)
+	icon_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	inner.add_child(icon_label)
+
+	var title_lbl := UIKit.title_label(game.get("title", game.get("id", "?")), 18, UIKit.COLOR_TEXT)
+	title_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	inner.add_child(title_lbl)
+
 	return btn

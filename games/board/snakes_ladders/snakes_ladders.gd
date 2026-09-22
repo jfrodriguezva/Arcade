@@ -93,8 +93,8 @@ func _build_ui() -> void:
 			else:
 				number = base + (10 - c)
 			var cell := Button.new()
-			cell.custom_minimum_size = Vector2(34, 34)
-			cell.add_theme_font_size_override("font_size", 10)
+			cell.custom_minimum_size = Vector2(56, 56)
+			cell.add_theme_font_size_override("font_size", 13)
 			cell.disabled = true
 			cell.focus_mode = Control.FOCUS_NONE
 			grid.add_child(cell)
@@ -162,7 +162,7 @@ func _on_roll_pressed() -> void:
 func _do_turn(owner: String) -> void:
 	roll_btn.disabled = true
 	var roll: int = randi() % 6 + 1
-	dice_label.text = "🎲 %d" % roll
+	await UIKit.animate_dice_label(self, dice_label, roll)
 
 	var pos: int = player_pos if owner == "player" else bot_pos
 	pos = min(pos + roll, 100)

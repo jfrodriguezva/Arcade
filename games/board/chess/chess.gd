@@ -119,8 +119,8 @@ func _build_ui() -> void:
 		var row: Array = []
 		for x in range(SIZE):
 			var cell := Button.new()
-			cell.custom_minimum_size = Vector2(38, 38)
-			cell.add_theme_font_size_override("font_size", 22)
+			cell.custom_minimum_size = Vector2(72, 72)
+			cell.add_theme_font_size_override("font_size", 40)
 			cell.pressed.connect(_on_cell_pressed.bind(x, y))
 			grid.add_child(cell)
 			row.append(cell)

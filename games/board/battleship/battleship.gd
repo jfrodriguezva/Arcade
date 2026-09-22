@@ -98,8 +98,8 @@ func _build_grid(is_enemy: bool) -> GridContainer:
 		var row: Array = []
 		for x in range(GRID_SIZE):
 			var cell := Button.new()
-			cell.custom_minimum_size = Vector2(36, 36)
-			cell.add_theme_font_size_override("font_size", 16)
+			cell.custom_minimum_size = Vector2(58, 58)
+			cell.add_theme_font_size_override("font_size", 20)
 			UIKit.style_button(cell, UIKit.COLOR_BG_LIGHT, 8)
 			if is_enemy:
 				cell.pressed.connect(_on_enemy_cell_pressed.bind(x, y))

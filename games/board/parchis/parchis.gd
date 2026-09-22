@@ -96,8 +96,8 @@ func _build_ui() -> void:
 
 	for i in range(SHARED_TRACK_LEN):
 		var cell := Button.new()
-		cell.custom_minimum_size = Vector2(28, 28)
-		cell.add_theme_font_size_override("font_size", 10)
+		cell.custom_minimum_size = Vector2(40, 40)
+		cell.add_theme_font_size_override("font_size", 13)
 		cell.disabled = true
 		cell.focus_mode = Control.FOCUS_NONE
 		track_grid.add_child(cell)
@@ -110,7 +110,7 @@ func _build_ui() -> void:
 	vbox.add_child(player_row)
 	for i in range(4):
 		var btn := Button.new()
-		btn.custom_minimum_size = Vector2(64, 44)
+		btn.custom_minimum_size = Vector2(78, 54)
 		btn.add_theme_font_size_override("font_size", 12)
 		btn.pressed.connect(_on_token_pressed.bind("player", i))
 		player_row.add_child(btn)
@@ -123,7 +123,7 @@ func _build_ui() -> void:
 	vbox.add_child(bot_row)
 	for i in range(4):
 		var btn := Button.new()
-		btn.custom_minimum_size = Vector2(64, 44)
+		btn.custom_minimum_size = Vector2(78, 54)
 		btn.add_theme_font_size_override("font_size", 12)
 		btn.pressed.connect(_on_token_pressed.bind("bot", i))
 		bot_row.add_child(btn)
@@ -187,7 +187,9 @@ func _on_roll_pressed() -> void:
 
 
 func _perform_roll(owner: String) -> void:
-	last_roll = randi() % 6 + 1
+	var rolled: int = randi() % 6 + 1
+	await UIKit.animate_dice_label(self, dice_label, rolled)
+	last_roll = rolled
 	if last_roll == 6:
 		consecutive_sixes += 1
 	else:

@@ -88,8 +88,8 @@ func _build_ui() -> void:
 
 	for i in range(9):
 		var cell := Button.new()
-		cell.custom_minimum_size = Vector2(96, 96)
-		cell.add_theme_font_size_override("font_size", 48)
+		cell.custom_minimum_size = Vector2(130, 130)
+		cell.add_theme_font_size_override("font_size", 64)
 		UIKit.style_button(cell, UIKit.COLOR_BG_LIGHT, 12)
 		cell.pressed.connect(_on_cell_pressed.bind(i))
 		grid.add_child(cell)

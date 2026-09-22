@@ -8,8 +8,8 @@ extends Control
 const GAME_ID := "mahjong"
 const COLS := 8
 const ROWS := 6
-const CELL_W := 44
-const CELL_H := 58
+const CELL_W := 56
+const CELL_H := 74
 
 const KINDS := [
 	"Bambú 1", "Bambú 2", "Bambú 3", "Bambú 4", "Bambú 5", "Bambú 6", "Bambú 7", "Bambú 8", "Bambú 9",
@@ -126,7 +126,7 @@ func _build_tile_buttons() -> void:
 		else:
 			btn.position = Vector2(base_x + 2, base_y + 2)
 			btn.size = Vector2(CELL_W - 4, CELL_H - 4)
-		btn.add_theme_font_size_override("font_size", 12)
+		btn.add_theme_font_size_override("font_size", 16)
 		btn.pressed.connect(_on_tile_pressed.bind(i))
 		canvas.add_child(btn)
 		tiles[i]["btn"] = btn

@@ -7,6 +7,7 @@ var games: Array[Dictionary] = [
 	{
 		"id": "tictactoe",
 		"title": "Gato",
+		"icon": "❌",
 		"category": "mesa",
 		"scene": "res://games/board/tictactoe/tic_tac_toe.tscn",
 		"enabled": true,
@@ -14,6 +15,7 @@ var games: Array[Dictionary] = [
 	{
 		"id": "battleship",
 		"title": "Batalla Naval",
+		"icon": "🚢",
 		"category": "mesa",
 		"scene": "res://games/board/battleship/battleship.tscn",
 		"enabled": true,
@@ -21,6 +23,7 @@ var games: Array[Dictionary] = [
 	{
 		"id": "solitaire",
 		"title": "Solitario",
+		"icon": "🃏",
 		"category": "mesa",
 		"scene": "res://games/board/solitaire/solitaire.tscn",
 		"enabled": true,
@@ -28,6 +31,7 @@ var games: Array[Dictionary] = [
 	{
 		"id": "checkers",
 		"title": "Damas",
+		"icon": "🔴",
 		"category": "mesa",
 		"scene": "res://games/board/checkers/checkers.tscn",
 		"enabled": true,
@@ -35,6 +39,7 @@ var games: Array[Dictionary] = [
 	{
 		"id": "othello",
 		"title": "Otelo",
+		"icon": "⚫",
 		"category": "mesa",
 		"scene": "res://games/board/othello/othello.tscn",
 		"enabled": true,
@@ -42,6 +47,7 @@ var games: Array[Dictionary] = [
 	{
 		"id": "domino",
 		"title": "Dominó",
+		"icon": "🁫",
 		"category": "mesa",
 		"scene": "res://games/board/domino/domino.tscn",
 		"enabled": true,
@@ -49,6 +55,7 @@ var games: Array[Dictionary] = [
 	{
 		"id": "loteria",
 		"title": "Lotería",
+		"icon": "🐓",
 		"category": "mesa",
 		"scene": "res://games/board/loteria/loteria.tscn",
 		"enabled": true,
@@ -56,6 +63,7 @@ var games: Array[Dictionary] = [
 	{
 		"id": "chess",
 		"title": "Ajedrez",
+		"icon": "♟️",
 		"category": "mesa",
 		"scene": "res://games/board/chess/chess.tscn",
 		"enabled": true,
@@ -63,6 +71,7 @@ var games: Array[Dictionary] = [
 	{
 		"id": "sudoku",
 		"title": "Sudoku",
+		"icon": "🔢",
 		"category": "mesa",
 		"scene": "res://games/board/sudoku/sudoku.tscn",
 		"enabled": true,
@@ -70,6 +79,7 @@ var games: Array[Dictionary] = [
 	{
 		"id": "snakes_ladders",
 		"title": "Serpientes y Escaleras",
+		"icon": "🐍",
 		"category": "mesa",
 		"scene": "res://games/board/snakes_ladders/snakes_ladders.tscn",
 		"enabled": true,
@@ -77,6 +87,7 @@ var games: Array[Dictionary] = [
 	{
 		"id": "generala",
 		"title": "Generala",
+		"icon": "🎲",
 		"category": "mesa",
 		"scene": "res://games/board/generala/generala.tscn",
 		"enabled": true,
@@ -84,6 +95,7 @@ var games: Array[Dictionary] = [
 	{
 		"id": "parchis",
 		"title": "Parchís",
+		"icon": "🏁",
 		"category": "mesa",
 		"scene": "res://games/board/parchis/parchis.tscn",
 		"enabled": true,
@@ -91,6 +103,7 @@ var games: Array[Dictionary] = [
 	{
 		"id": "mahjong",
 		"title": "Mahjong Solitario",
+		"icon": "🀄",
 		"category": "mesa",
 		"scene": "res://games/board/mahjong/mahjong.tscn",
 		"enabled": true,
@@ -98,6 +111,7 @@ var games: Array[Dictionary] = [
 	{
 		"id": "chinese_checkers",
 		"title": "Damas Chinas",
+		"icon": "🟣",
 		"category": "mesa",
 		"scene": "res://games/board/chinese_checkers/chinese_checkers.tscn",
 		"enabled": true,
@@ -105,6 +119,7 @@ var games: Array[Dictionary] = [
 	{
 		"id": "backgammon",
 		"title": "Backgammon",
+		"icon": "🟤",
 		"category": "mesa",
 		"scene": "res://games/board/backgammon/backgammon.tscn",
 		"enabled": true,

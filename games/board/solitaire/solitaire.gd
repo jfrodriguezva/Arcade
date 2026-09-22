@@ -83,7 +83,7 @@ func _build_ui() -> void:
 
 	for col in range(7):
 		var col_control := Control.new()
-		col_control.custom_minimum_size = Vector2(72, 460)
+		col_control.custom_minimum_size = Vector2(92, 560)
 		tableau_row.add_child(col_control)
 		tableau_containers.append(col_control)
 
@@ -97,7 +97,7 @@ func _build_ui() -> void:
 
 func _make_card_button() -> PlayingCard:
 	var card := PlayingCard.new()
-	card.custom_minimum_size = Vector2(64, 90)
+	card.custom_minimum_size = Vector2(80, 112)
 	card.set_empty()
 	return card
 
@@ -166,7 +166,7 @@ func _redraw_all() -> void:
 			continue
 
 		for i in range(pile.size()):
-			var y := i * 24
+			var y := i * 30
 			if i == pile.size() - 1:
 				var btn := _make_card_button()
 				var is_selected: bool = selected.get("source", "") == "tableau" and selected.get("col", -1) == col
@@ -176,7 +176,7 @@ func _redraw_all() -> void:
 				container.add_child(btn)
 			else:
 				var strip := PlayingCard.new()
-				strip.custom_minimum_size = Vector2(64, 24)
+				strip.custom_minimum_size = Vector2(80, 30)
 				strip.disabled = true
 				strip.set_card(0, "♠", false)
 				strip.position = Vector2(0, y)

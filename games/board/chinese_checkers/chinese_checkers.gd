@@ -8,8 +8,8 @@ extends Control
 
 const GAME_ID := "chinese_checkers"
 const N := 10 # tablero de (N+1) x (N+1) = 121 celdas, coords (q,r) de 0..N
-const CELL_W := 30
-const CELL_H := 26
+const CELL_W := 40
+const CELL_H := 34
 const DIRS := [Vector2i(1, 0), Vector2i(1, -1), Vector2i(0, -1), Vector2i(-1, 0), Vector2i(-1, 1), Vector2i(0, 1)]
 
 const HELP_TEXT := "Cada jugador tiene 10 fichas en un triángulo, en esquinas opuestas del tablero.
@@ -33,6 +33,7 @@ var status_label: Label
 var canvas: Control
 var end_chain_btn: Button
 var cell_buttons: Dictionary = {}
+var piece_views: Dictionary = {}
 
 
 func _ready() -> void:
@@ -93,12 +94,16 @@ func _build_ui() -> void:
 	for q in range(N + 1):
 		for r in range(N + 1):
 			var cell := Button.new()
-			cell.custom_minimum_size = Vector2(24, 22)
-			cell.add_theme_font_size_override("font_size", 12)
+			cell.custom_minimum_size = Vector2(34, 30)
 			cell.position = Vector2(q * CELL_W + r * CELL_W * 0.5, r * CELL_H)
 			cell.pressed.connect(_on_cell_pressed.bind(Vector2i(q, r)))
 			canvas.add_child(cell)
 			cell_buttons[Vector2i(q, r)] = cell
+
+			var piece := GamePiece.new()
+			piece.set_anchors_preset(Control.PRESET_FULL_RECT)
+			cell.add_child(piece)
+			piece_views[Vector2i(q, r)] = piece
 
 	var restart_btn := Button.new()
 	restart_btn.text = "↻  Nueva partida / Modo"
@@ -390,10 +395,9 @@ func _redraw_all() -> void:
 			btn.add_theme_stylebox_override("disabled", sb)
 			btn.disabled = false
 
+			var piece_view: GamePiece = piece_views[cell]
 			if occupant == "":
-				btn.text = ""
+				piece_view.hide_piece()
 			else:
-				btn.text = "●"
 				var color: Color = UIKit.COLOR_ACCENT if occupant == "player" else UIKit.COLOR_ACCENT_2
-				btn.add_theme_color_override("font_color", color)
-				btn.add_theme_color_override("font_disabled_color", color)
+				piece_view.set_piece(color)

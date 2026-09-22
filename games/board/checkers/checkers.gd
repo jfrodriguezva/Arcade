@@ -18,6 +18,7 @@ Gana quien deje al rival sin fichas o sin movimientos posibles."
 
 var board: Array = [] # board[y][x] = null o {"owner":"player"/"bot", "king":bool}
 var cell_buttons: Array = []
+var piece_views: Array = []
 var selected: Vector2i = Vector2i(-1, -1)
 var current_turn: String = "player"
 var game_over: bool = false
@@ -76,10 +77,10 @@ func _build_ui() -> void:
 
 	for y in range(SIZE):
 		var row: Array = []
+		var piece_row: Array = []
 		for x in range(SIZE):
 			var cell := Button.new()
-			cell.custom_minimum_size = Vector2(38, 38)
-			cell.add_theme_font_size_override("font_size", 20)
+			cell.custom_minimum_size = Vector2(72, 72)
 			if (x + y) % 2 == 1:
 				cell.pressed.connect(_on_cell_pressed.bind(x, y))
 			else:
@@ -87,7 +88,13 @@ func _build_ui() -> void:
 				cell.mouse_filter = Control.MOUSE_FILTER_IGNORE
 			grid.add_child(cell)
 			row.append(cell)
+
+			var piece := GamePiece.new()
+			piece.set_anchors_preset(Control.PRESET_FULL_RECT)
+			cell.add_child(piece)
+			piece_row.append(piece)
 		cell_buttons.append(row)
+		piece_views.append(piece_row)
 
 	var restart_btn := Button.new()
 	restart_btn.text = "↻  Nueva partida / Modo"
@@ -164,13 +171,12 @@ func _style_square(x: int, y: int) -> void:
 	cell.add_theme_stylebox_override("hover", sb)
 	cell.add_theme_stylebox_override("disabled", sb)
 
+	var piece_view: GamePiece = piece_views[y][x]
 	if piece == null:
-		cell.text = ""
+		piece_view.hide_piece()
 	else:
-		cell.text = "♛" if piece["king"] else "●"
 		var color: Color = UIKit.COLOR_ACCENT if piece["owner"] == "player" else UIKit.COLOR_ACCENT_2
-		cell.add_theme_color_override("font_color", color)
-		cell.add_theme_color_override("font_disabled_color", color)
+		piece_view.set_piece(color, piece["king"])
 
 
 func _direction_ok(owner: String, king: bool, dy: int) -> bool:

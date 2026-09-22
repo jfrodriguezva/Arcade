@@ -80,7 +80,7 @@ func _build_ui() -> void:
 
 	for i in range(5):
 		var die := Button.new()
-		die.custom_minimum_size = Vector2(56, 56)
+		die.custom_minimum_size = Vector2(68, 68)
 		die.add_theme_font_size_override("font_size", 26)
 		die.pressed.connect(_on_die_pressed.bind(i))
 		dice_row.add_child(die)
@@ -268,9 +268,13 @@ func _on_roll_pressed() -> void:
 		return
 	if mode == "pve" and current_turn != "player":
 		return
+	roll_btn.disabled = true
+	var final_values: Array = dice.duplicate()
 	for i in range(5):
 		if not held[i]:
-			dice[i] = randi() % 6 + 1
+			final_values[i] = randi() % 6 + 1
+	await UIKit.animate_dice_buttons(self, die_buttons, final_values, held)
+	dice = final_values
 	rolls_left -= 1
 	_redraw_all()
 
@@ -304,9 +308,12 @@ func _bot_take_turn() -> void:
 	held = [false, false, false, false, false]
 
 	for roll_num in range(3):
+		var final_values: Array = dice.duplicate()
 		for i in range(5):
 			if not held[i]:
-				dice[i] = randi() % 6 + 1
+				final_values[i] = randi() % 6 + 1
+		await UIKit.animate_dice_buttons(self, die_buttons, final_values, held)
+		dice = final_values
 		_redraw_all()
 		if roll_num < 2:
 			_bot_decide_holds()
