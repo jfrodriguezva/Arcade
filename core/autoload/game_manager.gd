@@ -67,6 +67,20 @@ var games: Array[Dictionary] = [
 		"scene": "res://games/board/sudoku/sudoku.tscn",
 		"enabled": true,
 	},
+	{
+		"id": "snakes_ladders",
+		"title": "Serpientes y Escaleras",
+		"category": "mesa",
+		"scene": "res://games/board/snakes_ladders/snakes_ladders.tscn",
+		"enabled": true,
+	},
+	{
+		"id": "generala",
+		"title": "Generala",
+		"category": "mesa",
+		"scene": "res://games/board/generala/generala.tscn",
+		"enabled": true,
+	},
 ]
 
 var current_game_id: String = ""
