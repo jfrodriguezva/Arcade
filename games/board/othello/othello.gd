@@ -167,15 +167,16 @@ func _legal_moves_on(b: Array, owner: String) -> Array:
 	return moves
 
 
-func _place(x: int, y: int, owner: String) -> void:
-	_place_on(board, x, y, owner)
+func _place(x: int, y: int, owner: String) -> Array:
+	return _place_on(board, x, y, owner)
 
 
-func _place_on(b: Array, x: int, y: int, owner: String) -> void:
+func _place_on(b: Array, x: int, y: int, owner: String) -> Array:
 	var flips: Array = _flips_for_on(b, x, y, owner)
 	b[y][x] = owner
 	for p: Vector2i in flips:
 		b[p.y][p.x] = owner
+	return flips
 
 
 func _clone_board(b: Array) -> Array:
@@ -231,9 +232,17 @@ func _on_cell_pressed(x: int, y: int) -> void:
 	var owner: String = current_turn
 	if _flips_for(x, y, owner).is_empty():
 		return
-	_place(x, y, owner)
+	var flips: Array = _place(x, y, owner)
 	_redraw_all()
+	_animate_flips(x, y, flips)
+	await get_tree().create_timer(0.5).timeout
 	_begin_turn("bot" if owner == "player" else "player")
+
+
+func _animate_flips(x: int, y: int, flips: Array) -> void:
+	UIKit.pulse(piece_views[y][x])
+	for p: Vector2i in flips:
+		UIKit.pulse(piece_views[p.y][p.x])
 
 
 func _begin_turn(owner: String) -> void:
@@ -248,13 +257,14 @@ func _begin_turn(owner: String) -> void:
 		var who: String = _turn_label(owner)
 		status_label.text = "%s no tiene movimientos, se pasa el turno" % who
 		status_label.add_theme_color_override("font_color", UIKit.COLOR_TEXT_DIM)
+		await get_tree().create_timer(0.9).timeout
 		_begin_turn(other)
 		return
 
 	_update_turn_status(owner)
 
 	if mode == "pve" and owner == "bot":
-		await get_tree().create_timer(0.5).timeout
+		await get_tree().create_timer(1.1).timeout
 		_bot_move(moves)
 
 
@@ -286,8 +296,10 @@ func _bot_move(moves: Array) -> void:
 			chosen = _pick_greedy_move(moves)
 		_:
 			chosen = _pick_minimax_move(moves, 3)
-	_place(chosen.x, chosen.y, "bot")
+	var flips: Array = _place(chosen.x, chosen.y, "bot")
 	_redraw_all()
+	_animate_flips(chosen.x, chosen.y, flips)
+	await get_tree().create_timer(0.7).timeout
 	_begin_turn("player")
 
 

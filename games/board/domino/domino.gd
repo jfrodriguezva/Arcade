@@ -25,8 +25,14 @@ var selected_tile_index: int = -1
 var current_turn: String = "player"
 var game_over: bool = false
 
+const TABLE_W := 640.0
+const TILE_W := 64.0
+const TILE_H := 88.0
+const TILE_GAP := 5.0
+
 var status_label: Label
-var chain_row: HBoxContainer
+var chain_canvas: Control
+var chain_scroll: ScrollContainer
 var info_label: Label
 var hand_row: HBoxContainer
 var end_left_btn: Button
@@ -64,19 +70,21 @@ func _build_ui() -> void:
 	info_label = UIKit.title_label("", 16, UIKit.COLOR_TEXT_DIM)
 	vbox.add_child(info_label)
 
+	vbox.add_child(UIKit.title_label("Mesa", 14, UIKit.COLOR_TEXT_DIM))
+
 	var chain_panel := PanelContainer.new()
-	chain_panel.custom_minimum_size = Vector2(0, 150)
+	chain_panel.custom_minimum_size = Vector2(0, 260)
 	chain_panel.add_theme_stylebox_override("panel", UIKit.stylebox(UIKit.COLOR_PANEL, UIKit.COLOR_ACCENT_3, 14, 2))
 	vbox.add_child(chain_panel)
 	var chain_margin := MarginContainer.new()
 	for side: String in ["margin_left", "margin_right", "margin_top", "margin_bottom"]:
 		chain_margin.add_theme_constant_override(side, 10)
 	chain_panel.add_child(chain_margin)
-	var chain_scroll := ScrollContainer.new()
+	chain_scroll = ScrollContainer.new()
 	chain_margin.add_child(chain_scroll)
-	chain_row = HBoxContainer.new()
-	chain_row.add_theme_constant_override("separation", 3)
-	chain_scroll.add_child(chain_row)
+	chain_canvas = Control.new()
+	chain_canvas.custom_minimum_size = Vector2(TABLE_W, TILE_H + 20)
+	chain_scroll.add_child(chain_canvas)
 
 	var ends_row := HBoxContainer.new()
 	ends_row.alignment = BoxContainer.ALIGNMENT_CENTER
@@ -166,17 +174,7 @@ func _new_game() -> void:
 
 
 func _redraw_all() -> void:
-	for child: Node in chain_row.get_children():
-		child.queue_free()
-	if chain.is_empty():
-		chain_row.add_child(UIKit.title_label("(vacío, coloca la primera ficha)", 14, UIKit.COLOR_TEXT_DIM))
-	else:
-		for tile: Dictionary in chain:
-			var t := DominoTile.new()
-			t.custom_minimum_size = Vector2(90, 128)
-			t.disabled = true
-			t.set_values(tile["a"], tile["b"], true)
-			chain_row.add_child(t)
+	_redraw_chain_table()
 
 	if chain.is_empty():
 		end_left_btn.text = "Colocar ficha"
@@ -201,6 +199,47 @@ func _redraw_all() -> void:
 	var can_move: bool = _has_valid_move(player_hand)
 	draw_btn.disabled = game_over or current_turn != "player" or boneyard.is_empty()
 	pass_btn.disabled = game_over or current_turn != "player" or can_move or not boneyard.is_empty()
+
+
+func _redraw_chain_table() -> void:
+	for child: Node in chain_canvas.get_children():
+		child.queue_free()
+
+	if chain.is_empty():
+		chain_canvas.custom_minimum_size = Vector2(TABLE_W, TILE_H + 20)
+		var empty_lbl := UIKit.title_label("(vacío, coloca la primera ficha)", 14, UIKit.COLOR_TEXT_DIM)
+		empty_lbl.position = Vector2(10, 10)
+		chain_canvas.add_child(empty_lbl)
+		return
+
+	# Acomodo tipo "serpiente" como en una mesa real: las fichas se van
+	# colocando de canto a canto en fila; cuando la fila se llena, la
+	# cadena da vuelta y sigue en la fila de abajo (alternando sentido),
+	# en vez de amontonarse en una sola tira horizontal.
+	var cols_per_row: int = max(1, int(TABLE_W / (TILE_W + TILE_GAP)))
+	var row := 0
+	var col := 0
+	var direction := 1
+
+	for tile: Dictionary in chain:
+		var t := DominoTile.new()
+		t.custom_minimum_size = Vector2(TILE_W, TILE_H)
+		t.size = Vector2(TILE_W, TILE_H)
+		t.disabled = true
+		t.set_values(tile["a"], tile["b"], tile["a"] == tile["b"])
+
+		var display_col: int = col if direction == 1 else (cols_per_row - 1 - col)
+		t.position = Vector2(display_col * (TILE_W + TILE_GAP), row * (TILE_H + TILE_GAP))
+		chain_canvas.add_child(t)
+
+		col += 1
+		if col >= cols_per_row:
+			col = 0
+			row += 1
+			direction *= -1
+
+	var total_rows: int = row + 1
+	chain_canvas.custom_minimum_size = Vector2(TABLE_W, total_rows * (TILE_H + TILE_GAP) + 10)
 
 
 func _has_valid_move(hand: Array) -> bool:
