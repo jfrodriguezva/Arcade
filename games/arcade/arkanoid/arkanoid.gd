@@ -11,22 +11,26 @@ const PADDLE_W := 120.0
 const PADDLE_H := 18.0
 const BALL_SIZE := 16.0
 const COLS := 8
-const ROWS := 5
 const BRICK_GAP := 4.0
-const BRICK_H := 30.0
-const BALL_SPEED := 480.0
+const BRICK_H := 28.0
+const BASE_BALL_SPEED := 420.0
+const SPEED_PER_LEVEL := 20.0
 const MAX_BOUNCE_VX := 380.0
+const MAX_LEVEL := 10
 
 const HELP_TEXT := "Arrastra el dedo (o el mouse) horizontalmente sobre el área de juego para mover la paleta.
 
 Toca la pantalla para lanzar la bola. Rebota la bola para romper todos los ladrillos sin dejarla caer — el punto donde golpea la paleta cambia el ángulo del rebote.
 
-Pierdes una vida si la bola cae debajo de la paleta. Ganas si rompes todos los ladrillos; pierdes si se acaban tus 3 vidas."
+Hay 10 niveles: cada uno tiene más filas de ladrillos, la bola es más rápida, y desde el nivel 4 aparecen ladrillos resistentes (necesitan 2 golpes, se ven más claros tras el primero).
+
+Pierdes una vida si la bola cae debajo de la paleta. Ganas si completas los 10 niveles; pierdes si se acaban tus 3 vidas."
 
 var ball_pos: Vector2 = Vector2.ZERO
 var ball_vel: Vector2 = Vector2.ZERO
 var score: int = 0
 var lives: int = 3
+var level: int = 1
 var state: String = "ready" # ready | playing | game_over | won
 var bricks: Array = []
 
@@ -97,8 +101,6 @@ func _build_ui() -> void:
 	ball_view.set_piece(UIKit.COLOR_ACCENT_3)
 	play_area.add_child(ball_view)
 
-	_build_bricks()
-
 	var restart_btn := Button.new()
 	restart_btn.text = "↻  Nueva partida"
 	restart_btn.custom_minimum_size = Vector2(200, 48)
@@ -107,14 +109,29 @@ func _build_ui() -> void:
 	vbox.add_child(restart_btn)
 
 
+func _rows_for_level(lvl: int) -> int:
+	return min(3 + lvl, 9)
+
+
+func _ball_speed_for_level(lvl: int) -> float:
+	return BASE_BALL_SPEED + SPEED_PER_LEVEL * (lvl - 1)
+
+
 func _build_bricks() -> void:
+	for b: Dictionary in bricks:
+		b["view"].queue_free()
 	bricks.clear()
+
+	var rows: int = _rows_for_level(level)
+	var tough_chance: float = clamp(0.06 * (level - 3), 0.0, 0.35)
 	var brick_w: float = (PLAY_W - BRICK_GAP * (COLS + 1)) / COLS
 	var row_colors: Array = [UIKit.COLOR_ACCENT, UIKit.COLOR_ACCENT_2, UIKit.COLOR_ACCENT_3, UIKit.COLOR_DANGER, UIKit.COLOR_TEXT_DIM]
-	for r in range(ROWS):
+
+	for r in range(rows):
 		for c in range(COLS):
 			var x: float = BRICK_GAP + c * (brick_w + BRICK_GAP)
 			var y: float = 20.0 + r * (BRICK_H + BRICK_GAP)
+			var tough: bool = level >= 4 and randf() < tough_chance
 			var view := Panel.new()
 			view.position = Vector2(x, y)
 			view.size = Vector2(brick_w, BRICK_H)
@@ -122,22 +139,24 @@ func _build_bricks() -> void:
 			var color: Color = row_colors[r % row_colors.size()]
 			view.add_theme_stylebox_override("panel", UIKit.stylebox(color, Color(0, 0, 0, 0), 4))
 			play_area.add_child(view)
-			bricks.append({"rect": Rect2(x, y, brick_w, BRICK_H), "alive": true, "view": view})
+			bricks.append({
+				"rect": Rect2(x, y, brick_w, BRICK_H), "alive": true, "view": view,
+				"hits": 2 if tough else 1, "base_color": color,
+			})
 
 
 func _new_game() -> void:
 	score = 0
 	lives = 3
+	level = 1
 	state = "ready"
-	for b: Dictionary in bricks:
-		b["alive"] = true
-		b["view"].visible = true
+	_build_bricks()
 	_update_hud()
 	_reset_ball()
 
 
 func _update_hud() -> void:
-	score_label.text = "Puntos: %d" % score
+	score_label.text = "Puntos: %d      Nivel: %d/%d" % [score, level, MAX_LEVEL]
 	lives_label.text = "Vidas: %d" % lives
 
 
@@ -167,7 +186,8 @@ func _on_play_area_input(event: InputEvent) -> void:
 
 	if state == "ready":
 		state = "playing"
-		ball_vel = Vector2(BALL_SPEED * 0.5, -BALL_SPEED)
+		var speed: float = _ball_speed_for_level(level)
+		ball_vel = Vector2(speed * 0.5, -speed)
 		status_label.text = ""
 
 
@@ -198,8 +218,9 @@ func _process(delta: float) -> void:
 	if ball_vel.y > 0.0 and ball_rect.intersects(paddle_rect):
 		var hit_pos: float = ((ball_pos.x + BALL_SIZE / 2.0) - (paddle.position.x + PADDLE_W / 2.0)) / (PADDLE_W / 2.0)
 		hit_pos = clamp(hit_pos, -1.0, 1.0)
+		var speed: float = _ball_speed_for_level(level)
 		ball_vel.x = hit_pos * MAX_BOUNCE_VX
-		ball_vel.y = -abs(ball_vel.y)
+		ball_vel.y = -speed
 		ball_pos.y = paddle.position.y - BALL_SIZE - 1.0
 
 	for b: Dictionary in bricks:
@@ -207,9 +228,14 @@ func _process(delta: float) -> void:
 			continue
 		var brick_rect: Rect2 = b["rect"]
 		if ball_rect.intersects(brick_rect):
-			b["alive"] = false
-			b["view"].visible = false
-			score += 10
+			b["hits"] -= 1
+			if b["hits"] <= 0:
+				b["alive"] = false
+				b["view"].visible = false
+				score += 10
+			else:
+				score += 5
+				b["view"].add_theme_stylebox_override("panel", UIKit.stylebox(b["base_color"].lightened(0.55), Color(0, 0, 0, 0), 4))
 			_update_hud()
 
 			var overlap_x: float = min(ball_rect.end.x, brick_rect.end.x) - max(ball_rect.position.x, brick_rect.position.x)
@@ -227,7 +253,7 @@ func _process(delta: float) -> void:
 		return
 
 	if _all_bricks_cleared():
-		_win()
+		_advance_level()
 
 
 func _all_bricks_cleared() -> bool:
@@ -249,9 +275,21 @@ func _lose_life() -> void:
 	_reset_ball()
 
 
+func _advance_level() -> void:
+	if level >= MAX_LEVEL:
+		_win()
+		return
+	level += 1
+	state = "ready"
+	_build_bricks()
+	_reset_ball()
+	_update_hud()
+	status_label.text = "¡Nivel %d! Toca para lanzar la bola" % level
+
+
 func _win() -> void:
 	state = "won"
-	status_label.text = "¡Ganaste! Puntos: %d" % score
+	status_label.text = "¡Completaste los %d niveles! Puntos: %d" % [MAX_LEVEL, score]
 	_record_result(true)
 
 
