@@ -156,6 +156,14 @@ var games: Array[Dictionary] = [
 		"scene": "res://games/arcade/panic_reveal/panic_reveal.tscn",
 		"enabled": true,
 	},
+	{
+		"id": "maze_muncher",
+		"title": "Caza en el Laberinto",
+		"icon": "👻",
+		"category": "arcade",
+		"scene": "res://games/arcade/maze_muncher/maze_muncher.tscn",
+		"enabled": true,
+	},
 ]
 
 var current_game_id: String = ""
