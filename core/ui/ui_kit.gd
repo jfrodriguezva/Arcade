@@ -58,3 +58,36 @@ static func pulse(node: Control) -> void:
 	var tween := node.create_tween()
 	node.scale = Vector2(0.7, 0.7)
 	tween.tween_property(node, "scale", Vector2.ONE, 0.18).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+
+
+static func build_toolbar(vbox: BoxContainer, root: Control, help_title: String, help_body: String) -> void:
+	## Fila estándar de "< Volver" + "? Cómo jugar" para el encabezado de cada juego.
+	var toolbar := HBoxContainer.new()
+	toolbar.alignment = BoxContainer.ALIGNMENT_CENTER
+	toolbar.add_theme_constant_override("separation", 10)
+	vbox.add_child(toolbar)
+
+	var back_btn := Button.new()
+	back_btn.text = "<  Volver"
+	back_btn.custom_minimum_size = Vector2(120, 44)
+	style_button(back_btn, COLOR_TEXT_DIM)
+	back_btn.pressed.connect(func() -> void: GameManager.go_to_hub())
+	toolbar.add_child(back_btn)
+
+	add_help_button(toolbar, root, help_title, help_body)
+
+
+static func add_help_button(toolbar: Control, root: Control, title: String, body: String) -> void:
+	var dialog := AcceptDialog.new()
+	dialog.title = title
+	dialog.dialog_text = body
+	dialog.dialog_autowrap = true
+	dialog.size = Vector2i(440, 380)
+	root.add_child(dialog)
+
+	var btn := Button.new()
+	btn.text = "?  Cómo jugar"
+	btn.custom_minimum_size = Vector2(140, 44)
+	style_button(btn, COLOR_ACCENT_3)
+	btn.pressed.connect(func() -> void: dialog.popup_centered())
+	toolbar.add_child(btn)

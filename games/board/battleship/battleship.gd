@@ -7,6 +7,16 @@ const GAME_ID := "battleship"
 const GRID_SIZE := 8
 const FLEET := [4, 3, 2, 2] # tamaños de barco
 
+const HELP_TEXT := "Tu flota (arriba) se coloca al azar y siempre está visible. La flota enemiga (abajo) está oculta.
+
+Toca una celda de la grilla enemiga para disparar ahí:
+- 'X' rojo = impacto
+- '·' = agua (fallaste)
+
+Después de cada disparo tuyo, la máquina dispara una vez a tu flota. Si acierta, seguirá probando las celdas vecinas.
+
+Gana quien hunda primero las 4 naves del rival (tamaños 4, 3, 2 y 2)."
+
 var player_board: Array = [] # Array[Array[Dictionary{ship:bool, shot:bool}]]
 var enemy_board: Array = []
 var player_cells: Array = [] # Array[Array[Button]]
@@ -45,12 +55,7 @@ func _build_ui() -> void:
 	vbox.add_theme_constant_override("separation", 14)
 	margin.add_child(vbox)
 
-	var back_btn := Button.new()
-	back_btn.text = "<  Volver"
-	back_btn.custom_minimum_size = Vector2(120, 44)
-	UIKit.style_button(back_btn, UIKit.COLOR_TEXT_DIM)
-	back_btn.pressed.connect(func() -> void: GameManager.go_to_hub())
-	vbox.add_child(back_btn)
+	UIKit.build_toolbar(vbox, self, "Batalla Naval", HELP_TEXT)
 
 	status_label = UIKit.title_label("", 24, UIKit.COLOR_TEXT)
 	vbox.add_child(status_label)

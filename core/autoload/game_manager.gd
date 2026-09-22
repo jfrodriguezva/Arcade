@@ -18,6 +18,20 @@ var games: Array[Dictionary] = [
 		"scene": "res://games/board/battleship/battleship.tscn",
 		"enabled": true,
 	},
+	{
+		"id": "solitaire",
+		"title": "Solitario",
+		"category": "mesa",
+		"scene": "res://games/board/solitaire/solitaire.tscn",
+		"enabled": true,
+	},
+	{
+		"id": "checkers",
+		"title": "Damas",
+		"category": "mesa",
+		"scene": "res://games/board/checkers/checkers.tscn",
+		"enabled": true,
+	},
 ]
 
 var current_game_id: String = ""

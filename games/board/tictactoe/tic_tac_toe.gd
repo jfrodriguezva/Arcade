@@ -13,6 +13,12 @@ const PLAYER_COLORS := {
 	"O": Color(0.306, 0.804, 0.769), # teal (UIKit.COLOR_ACCENT_2)
 }
 
+const HELP_TEXT := "Se juega por turnos entre 2 personas en el mismo dispositivo.
+
+Empieza el jugador X. Toca una celda vacía para marcarla con tu símbolo.
+
+Gana quien logre alinear 3 símbolos iguales en fila, columna o diagonal. Si el tablero se llena sin ganador, es empate."
+
 var board: Array[String] = []
 var current_player: String = "X"
 var game_over: bool = false
@@ -42,12 +48,7 @@ func _build_ui() -> void:
 	vbox.add_theme_constant_override("separation", 16)
 	margin.add_child(vbox)
 
-	var back_btn := Button.new()
-	back_btn.text = "<  Volver"
-	back_btn.custom_minimum_size = Vector2(120, 44)
-	UIKit.style_button(back_btn, UIKit.COLOR_TEXT_DIM)
-	back_btn.pressed.connect(func() -> void: GameManager.go_to_hub())
-	vbox.add_child(back_btn)
+	UIKit.build_toolbar(vbox, self, "Gato", HELP_TEXT)
 
 	status_label = UIKit.title_label("", 26, UIKit.COLOR_TEXT)
 	vbox.add_child(status_label)
