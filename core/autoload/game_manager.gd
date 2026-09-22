@@ -88,6 +88,13 @@ var games: Array[Dictionary] = [
 		"scene": "res://games/board/parchis/parchis.tscn",
 		"enabled": true,
 	},
+	{
+		"id": "mahjong",
+		"title": "Mahjong Solitario",
+		"category": "mesa",
+		"scene": "res://games/board/mahjong/mahjong.tscn",
+		"enabled": true,
+	},
 ]
 
 var current_game_id: String = ""
