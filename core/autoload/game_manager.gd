@@ -32,6 +32,20 @@ var games: Array[Dictionary] = [
 		"scene": "res://games/board/checkers/checkers.tscn",
 		"enabled": true,
 	},
+	{
+		"id": "othello",
+		"title": "Otelo",
+		"category": "mesa",
+		"scene": "res://games/board/othello/othello.tscn",
+		"enabled": true,
+	},
+	{
+		"id": "domino",
+		"title": "Dominó",
+		"category": "mesa",
+		"scene": "res://games/board/domino/domino.tscn",
+		"enabled": true,
+	},
 ]
 
 var current_game_id: String = ""
