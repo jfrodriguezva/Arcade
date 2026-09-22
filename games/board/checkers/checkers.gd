@@ -21,12 +21,20 @@ var cell_buttons: Array = []
 var selected: Vector2i = Vector2i(-1, -1)
 var current_turn: String = "player"
 var game_over: bool = false
+var mode: String = "pve"
+var difficulty: String = "medium"
 
 var status_label: Label
 
 
 func _ready() -> void:
 	_build_ui()
+	UIKit.show_setup_overlay(self, "Damas", true, true, _on_setup_confirmed)
+
+
+func _on_setup_confirmed(config: Dictionary) -> void:
+	mode = config["mode"]
+	difficulty = config["difficulty"]
 	_new_game()
 
 
@@ -82,10 +90,10 @@ func _build_ui() -> void:
 		cell_buttons.append(row)
 
 	var restart_btn := Button.new()
-	restart_btn.text = "↻  Nueva partida"
-	restart_btn.custom_minimum_size = Vector2(200, 48)
+	restart_btn.text = "↻  Nueva partida / Modo"
+	restart_btn.custom_minimum_size = Vector2(220, 48)
 	UIKit.style_button(restart_btn, UIKit.COLOR_ACCENT_3)
-	restart_btn.pressed.connect(_new_game)
+	restart_btn.pressed.connect(func() -> void: UIKit.show_setup_overlay(self, "Damas", true, true, _on_setup_confirmed))
 	vbox.add_child(restart_btn)
 
 
@@ -109,9 +117,25 @@ func _new_game() -> void:
 	selected = Vector2i(-1, -1)
 	current_turn = "player"
 	game_over = false
-	status_label.text = "Tu turno"
-	status_label.add_theme_color_override("font_color", UIKit.COLOR_ACCENT)
+	_update_turn_status()
 	_redraw_all()
+
+
+func _update_turn_status() -> void:
+	if mode == "pve":
+		if current_turn == "player":
+			status_label.text = "Tu turno"
+			status_label.add_theme_color_override("font_color", UIKit.COLOR_ACCENT)
+		else:
+			status_label.text = "Turno de la máquina..."
+			status_label.add_theme_color_override("font_color", UIKit.COLOR_ACCENT_2)
+	else:
+		if current_turn == "player":
+			status_label.text = "Turno: Jugador 1 (rosa)"
+			status_label.add_theme_color_override("font_color", UIKit.COLOR_ACCENT)
+		else:
+			status_label.text = "Turno: Jugador 2 (teal)"
+			status_label.add_theme_color_override("font_color", UIKit.COLOR_ACCENT_2)
 
 
 func _redraw_all() -> void:
@@ -260,23 +284,29 @@ func _count_pieces(owner: String) -> int:
 
 func _check_win() -> bool:
 	if _count_pieces("bot") == 0 or not _has_any_move("bot"):
-		_end_game(true)
+		_end_game("player")
 		return true
 	if _count_pieces("player") == 0 or not _has_any_move("player"):
-		_end_game(false)
+		_end_game("bot")
 		return true
 	return false
 
 
-func _end_game(player_won: bool) -> void:
+func _end_game(winner_owner: String) -> void:
 	game_over = true
-	if player_won:
-		status_label.text = "¡Ganaste!"
-		status_label.add_theme_color_override("font_color", UIKit.COLOR_ACCENT_3)
+	if mode == "pve":
+		if winner_owner == "player":
+			status_label.text = "¡Ganaste!"
+			status_label.add_theme_color_override("font_color", UIKit.COLOR_ACCENT_3)
+			_record_result(true)
+		else:
+			status_label.text = "Ganó la máquina"
+			status_label.add_theme_color_override("font_color", UIKit.COLOR_DANGER)
+			_record_result(false)
 	else:
-		status_label.text = "Ganó la máquina"
-		status_label.add_theme_color_override("font_color", UIKit.COLOR_DANGER)
-	_record_result(player_won)
+		var winner_label: String = "Jugador 1 (rosa)" if winner_owner == "player" else "Jugador 2 (teal)"
+		status_label.text = "¡Ganó %s!" % winner_label
+		status_label.add_theme_color_override("font_color", UIKit.COLOR_ACCENT_3)
 
 
 func _record_result(won: bool) -> void:
@@ -287,29 +317,32 @@ func _record_result(won: bool) -> void:
 
 
 func _on_cell_pressed(x: int, y: int) -> void:
-	if game_over or current_turn != "player":
+	if game_over:
+		return
+	if mode == "pve" and current_turn != "player":
 		return
 
+	var owner: String = current_turn
 	var piece: Variant = board[y][x]
 
 	if selected == Vector2i(-1, -1):
-		if piece != null and piece["owner"] == "player":
+		if piece != null and piece["owner"] == owner:
 			selected = Vector2i(x, y)
 			_redraw_all()
 		return
 
-	if piece != null and piece["owner"] == "player":
+	if piece != null and piece["owner"] == owner:
 		selected = Vector2i(x, y)
 		_redraw_all()
 		return
 
-	var result: String = _try_move(selected.x, selected.y, x, y, "player")
+	var result: String = _try_move(selected.x, selected.y, x, y, owner)
 	if result == "invalid":
 		selected = Vector2i(-1, -1)
 		_redraw_all()
 		return
 
-	if result == "capture" and _has_capture_from(x, y, "player"):
+	if result == "capture" and _has_capture_from(x, y, owner):
 		selected = Vector2i(x, y)
 		_redraw_all()
 		return
@@ -320,14 +353,25 @@ func _on_cell_pressed(x: int, y: int) -> void:
 	if _check_win():
 		return
 
-	current_turn = "bot"
-	status_label.text = "Turno de la máquina..."
-	status_label.add_theme_color_override("font_color", UIKit.COLOR_ACCENT_2)
-	await get_tree().create_timer(0.5).timeout
-	_bot_turn()
+	current_turn = "bot" if owner == "player" else "player"
+	_update_turn_status()
+
+	if mode == "pve" and current_turn == "bot":
+		await get_tree().create_timer(0.5).timeout
+		_bot_turn()
 
 
 func _pick_bot_move() -> Variant:
+	match difficulty:
+		"easy":
+			return _pick_bot_move_easy()
+		"medium":
+			return _pick_bot_move_smart(2)
+		_:
+			return _pick_bot_move_smart(4)
+
+
+func _pick_bot_move_easy() -> Variant:
 	var captures: Array = []
 	var moves: Array = []
 
@@ -378,5 +422,113 @@ func _bot_turn() -> void:
 		return
 
 	current_turn = "player"
-	status_label.text = "Tu turno"
-	status_label.add_theme_color_override("font_color", UIKit.COLOR_ACCENT)
+	_update_turn_status()
+
+
+# --- IA (minimax con poda alfa-beta para Medio/Difícil) ---
+
+func _clone_board(b: Array) -> Array:
+	var copy: Array = []
+	for row: Array in b:
+		var new_row: Array = []
+		for cell: Variant in row:
+			new_row.append(null if cell == null else {"owner": cell["owner"], "king": cell["king"]})
+		copy.append(new_row)
+	return copy
+
+
+func _generate_all_moves(b: Array, owner: String) -> Array:
+	var moves: Array = []
+	for y in range(SIZE):
+		for x in range(SIZE):
+			var piece: Variant = b[y][x]
+			if piece == null or piece["owner"] != owner:
+				continue
+			for dir: Vector2i in DIRS:
+				if not _direction_ok(owner, piece["king"], dir.y):
+					continue
+				var sx: int = x + dir.x
+				var sy: int = y + dir.y
+				if sx >= 0 and sx < SIZE and sy >= 0 and sy < SIZE and b[sy][sx] == null:
+					moves.append({"from": Vector2i(x, y), "to": Vector2i(sx, sy), "capture": false})
+
+				var tx: int = x + dir.x * 2
+				var ty: int = y + dir.y * 2
+				if tx >= 0 and tx < SIZE and ty >= 0 and ty < SIZE and b[ty][tx] == null:
+					var mid: Variant = b[sy][sx]
+					if mid != null and mid["owner"] != owner:
+						moves.append({"from": Vector2i(x, y), "to": Vector2i(tx, ty), "capture": true})
+	return moves
+
+
+func _apply_move_to_board(b: Array, move: Dictionary) -> void:
+	var from: Vector2i = move["from"]
+	var to: Vector2i = move["to"]
+	var piece: Dictionary = b[from.y][from.x]
+	b[from.y][from.x] = null
+	if (piece["owner"] == "player" and to.y == 0) or (piece["owner"] == "bot" and to.y == SIZE - 1):
+		piece["king"] = true
+	b[to.y][to.x] = piece
+	if move["capture"]:
+		var mx: int = (from.x + to.x) / 2
+		var my: int = (from.y + to.y) / 2
+		b[my][mx] = null
+
+
+func _evaluate_board(b: Array) -> float:
+	var score := 0.0
+	for row: Array in b:
+		for cell: Variant in row:
+			if cell == null:
+				continue
+			var value: float = 3.0 if cell["king"] else 1.0
+			score += value if cell["owner"] == "bot" else -value
+	return score
+
+
+func _minimax_checkers(b: Array, depth: int, alpha: float, beta: float, maximizing: bool) -> float:
+	if depth == 0:
+		return _evaluate_board(b)
+
+	var owner: String = "bot" if maximizing else "player"
+	var moves: Array = _generate_all_moves(b, owner)
+	if moves.is_empty():
+		return _evaluate_board(b) + (-50.0 if maximizing else 50.0)
+
+	if maximizing:
+		var best := -INF
+		for move: Dictionary in moves:
+			var nb: Array = _clone_board(b)
+			_apply_move_to_board(nb, move)
+			best = max(best, _minimax_checkers(nb, depth - 1, alpha, beta, false))
+			alpha = max(alpha, best)
+			if beta <= alpha:
+				break
+		return best
+	else:
+		var best := INF
+		for move: Dictionary in moves:
+			var nb: Array = _clone_board(b)
+			_apply_move_to_board(nb, move)
+			best = min(best, _minimax_checkers(nb, depth - 1, alpha, beta, true))
+			beta = min(beta, best)
+			if beta <= alpha:
+				break
+		return best
+
+
+func _pick_bot_move_smart(depth: int) -> Variant:
+	var moves: Array = _generate_all_moves(board, "bot")
+	if moves.is_empty():
+		return null
+
+	var best_move: Variant = moves[0]
+	var best_score := -INF
+	for move: Dictionary in moves:
+		var nb: Array = _clone_board(board)
+		_apply_move_to_board(nb, move)
+		var score: float = _minimax_checkers(nb, depth - 1, -INF, INF, false)
+		if score > best_score:
+			best_score = score
+			best_move = move
+	return best_move
