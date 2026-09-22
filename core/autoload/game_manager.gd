@@ -11,6 +11,13 @@ var games: Array[Dictionary] = [
 		"scene": "res://games/board/tictactoe/tic_tac_toe.tscn",
 		"enabled": true,
 	},
+	{
+		"id": "battleship",
+		"title": "Batalla Naval",
+		"category": "mesa",
+		"scene": "res://games/board/battleship/battleship.tscn",
+		"enabled": true,
+	},
 ]
 
 var current_game_id: String = ""

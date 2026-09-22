@@ -16,10 +16,21 @@ var status_label: Label
 
 func _ready() -> void:
 	_build_ui()
+	_update_category_highlight()
 	_refresh_grid()
 
 
+const CATEGORY_ACCENTS := {
+	"mesa": UIKit.COLOR_ACCENT_2,
+	"arcade": UIKit.COLOR_ACCENT,
+}
+
+var category_buttons: Dictionary = {}
+
+
 func _build_ui() -> void:
+	UIKit.apply_background(self)
+
 	var margin := MarginContainer.new()
 	margin.set_anchors_preset(Control.PRESET_FULL_RECT)
 	margin.add_theme_constant_override("margin_left", 32)
@@ -32,10 +43,7 @@ func _build_ui() -> void:
 	vbox.add_theme_constant_override("separation", 16)
 	margin.add_child(vbox)
 
-	var title_label := Label.new()
-	title_label.text = "Arcade Platform"
-	title_label.add_theme_font_size_override("font_size", 36)
-	title_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var title_label := UIKit.title_label("🕹  ARCADE PLATFORM", 34, UIKit.COLOR_ACCENT_3)
 	vbox.add_child(title_label)
 
 	var category_bar := HBoxContainer.new()
@@ -47,8 +55,10 @@ func _build_ui() -> void:
 		var btn := Button.new()
 		btn.text = CATEGORY_LABELS[category_id]
 		btn.custom_minimum_size = Vector2(160, 48)
+		UIKit.style_button(btn, CATEGORY_ACCENTS.get(category_id, UIKit.COLOR_ACCENT))
 		btn.pressed.connect(_on_category_pressed.bind(category_id))
 		category_bar.add_child(btn)
+		category_buttons[category_id] = btn
 
 	var scroll := ScrollContainer.new()
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -63,7 +73,19 @@ func _build_ui() -> void:
 
 func _on_category_pressed(category_id: String) -> void:
 	current_category = category_id
+	_update_category_highlight()
 	_refresh_grid()
+
+
+func _update_category_highlight() -> void:
+	for category_id: String in category_buttons.keys():
+		var btn: Button = category_buttons[category_id]
+		var accent: Color = CATEGORY_ACCENTS.get(category_id, UIKit.COLOR_ACCENT)
+		if category_id == current_category:
+			btn.add_theme_stylebox_override("normal", UIKit.stylebox(accent, accent, 14, 2))
+			btn.add_theme_color_override("font_color", UIKit.COLOR_BG)
+		else:
+			UIKit.style_button(btn, accent)
 
 
 func _refresh_grid() -> void:
@@ -72,9 +94,7 @@ func _refresh_grid() -> void:
 
 	var list: Array[Dictionary] = GameManager.get_games_by_category(current_category)
 	if list.is_empty():
-		var empty_label := Label.new()
-		empty_label.text = "Próximamente..."
-		grid.add_child(empty_label)
+		grid.add_child(UIKit.title_label("Próximamente...", 20, UIKit.COLOR_TEXT_DIM))
 		return
 
 	for game: Dictionary in list:
@@ -83,7 +103,9 @@ func _refresh_grid() -> void:
 
 func _build_game_card(game: Dictionary) -> Control:
 	var btn := Button.new()
-	btn.text = game.get("title", game.get("id", "?"))
+	btn.text = "\n%s\n" % game.get("title", game.get("id", "?"))
 	btn.custom_minimum_size = Vector2(300, 120)
+	btn.add_theme_font_size_override("font_size", 22)
+	UIKit.style_button(btn, CATEGORY_ACCENTS.get(game.get("category", ""), UIKit.COLOR_ACCENT), 18)
 	btn.pressed.connect(func() -> void: GameManager.go_to_game(game["id"]))
 	return btn

@@ -8,6 +8,11 @@ const WIN_LINES := [
 	[0, 4, 8], [2, 4, 6],
 ]
 
+const PLAYER_COLORS := {
+	"X": Color(1.0, 0.365, 0.451),   # rosa/rojo (UIKit.COLOR_ACCENT)
+	"O": Color(0.306, 0.804, 0.769), # teal (UIKit.COLOR_ACCENT_2)
+}
+
 var board: Array[String] = []
 var current_player: String = "X"
 var game_over: bool = false
@@ -22,6 +27,8 @@ func _ready() -> void:
 
 
 func _build_ui() -> void:
+	UIKit.apply_background(self)
+
 	var margin := MarginContainer.new()
 	margin.set_anchors_preset(Control.PRESET_FULL_RECT)
 	margin.add_theme_constant_override("margin_left", 32)
@@ -36,35 +43,48 @@ func _build_ui() -> void:
 	margin.add_child(vbox)
 
 	var back_btn := Button.new()
-	back_btn.text = "< Volver"
+	back_btn.text = "<  Volver"
+	back_btn.custom_minimum_size = Vector2(120, 44)
+	UIKit.style_button(back_btn, UIKit.COLOR_TEXT_DIM)
 	back_btn.pressed.connect(func() -> void: GameManager.go_to_hub())
 	vbox.add_child(back_btn)
 
-	status_label = Label.new()
-	status_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	status_label.add_theme_font_size_override("font_size", 28)
+	status_label = UIKit.title_label("", 26, UIKit.COLOR_TEXT)
 	vbox.add_child(status_label)
+
+	var board_panel := PanelContainer.new()
+	board_panel.add_theme_stylebox_override("panel", UIKit.stylebox(UIKit.COLOR_PANEL, UIKit.COLOR_ACCENT_3, 20, 3))
+	var board_margin := MarginContainer.new()
+	board_margin.add_theme_constant_override("margin_left", 16)
+	board_margin.add_theme_constant_override("margin_right", 16)
+	board_margin.add_theme_constant_override("margin_top", 16)
+	board_margin.add_theme_constant_override("margin_bottom", 16)
+	board_panel.add_child(board_margin)
 
 	var grid_center := CenterContainer.new()
 	grid_center.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	vbox.add_child(grid_center)
+	grid_center.add_child(board_panel)
 
 	var grid := GridContainer.new()
 	grid.columns = 3
-	grid.add_theme_constant_override("h_separation", 8)
-	grid.add_theme_constant_override("v_separation", 8)
-	grid_center.add_child(grid)
+	grid.add_theme_constant_override("h_separation", 10)
+	grid.add_theme_constant_override("v_separation", 10)
+	board_margin.add_child(grid)
 
 	for i in range(9):
 		var cell := Button.new()
 		cell.custom_minimum_size = Vector2(96, 96)
-		cell.add_theme_font_size_override("font_size", 40)
+		cell.add_theme_font_size_override("font_size", 48)
+		UIKit.style_button(cell, UIKit.COLOR_BG_LIGHT, 12)
 		cell.pressed.connect(_on_cell_pressed.bind(i))
 		grid.add_child(cell)
 		cell_buttons.append(cell)
 
 	var restart_btn := Button.new()
-	restart_btn.text = "Reiniciar"
+	restart_btn.text = "↻  Reiniciar"
+	restart_btn.custom_minimum_size = Vector2(160, 48)
+	UIKit.style_button(restart_btn, UIKit.COLOR_ACCENT_3)
 	restart_btn.pressed.connect(_new_game)
 	vbox.add_child(restart_btn)
 
@@ -78,7 +98,13 @@ func _new_game() -> void:
 	for cell: Button in cell_buttons:
 		cell.text = ""
 		cell.disabled = false
+		UIKit.style_button(cell, UIKit.COLOR_BG_LIGHT, 12)
+	_update_status()
+
+
+func _update_status() -> void:
 	status_label.text = "Turno: %s" % current_player
+	status_label.add_theme_color_override("font_color", PLAYER_COLORS[current_player])
 
 
 func _on_cell_pressed(index: int) -> void:
@@ -86,24 +112,33 @@ func _on_cell_pressed(index: int) -> void:
 		return
 
 	board[index] = current_player
-	cell_buttons[index].text = current_player
-	cell_buttons[index].disabled = true
+	var cell := cell_buttons[index]
+	cell.text = current_player
+	cell.disabled = true
+	cell.add_theme_color_override("font_disabled_color", PLAYER_COLORS[current_player])
+	UIKit.pulse(cell)
 
 	var winner := _check_winner()
 	if winner != "":
 		game_over = true
 		status_label.text = "¡Gana %s!" % winner
+		status_label.add_theme_color_override("font_color", PLAYER_COLORS[winner])
+		_highlight_win(_winning_line)
 		_record_result(winner)
 		return
 
 	if not board.has(""):
 		game_over = true
 		status_label.text = "Empate"
+		status_label.add_theme_color_override("font_color", UIKit.COLOR_TEXT_DIM)
 		_record_result("draw")
 		return
 
 	current_player = "O" if current_player == "X" else "X"
-	status_label.text = "Turno: %s" % current_player
+	_update_status()
+
+
+var _winning_line: Array = []
 
 
 func _check_winner() -> String:
@@ -112,8 +147,15 @@ func _check_winner() -> String:
 		var b: String = board[line[1]]
 		var c: String = board[line[2]]
 		if a != "" and a == b and b == c:
+			_winning_line = line
 			return a
 	return ""
+
+
+func _highlight_win(line: Array) -> void:
+	for i: int in line:
+		UIKit.style_button(cell_buttons[i], UIKit.COLOR_ACCENT_3, 12)
+		cell_buttons[i].add_theme_color_override("font_disabled_color", UIKit.COLOR_BG)
 
 
 func _record_result(result: String) -> void:
