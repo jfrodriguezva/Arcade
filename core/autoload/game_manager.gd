@@ -102,6 +102,13 @@ var games: Array[Dictionary] = [
 		"scene": "res://games/board/chinese_checkers/chinese_checkers.tscn",
 		"enabled": true,
 	},
+	{
+		"id": "backgammon",
+		"title": "Backgammon",
+		"category": "mesa",
+		"scene": "res://games/board/backgammon/backgammon.tscn",
+		"enabled": true,
+	},
 ]
 
 var current_game_id: String = ""
