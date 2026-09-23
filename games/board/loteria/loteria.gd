@@ -1,7 +1,9 @@
 extends Control
-## Lotería Mexicana contra la máquina. Ambos reciben una tabla de 16
-## cartas; el mazo (54 cartas clásicas) se canta una por una y hay que
-## marcar tu tabla a tiempo. Gana quien complete primero una línea
+## Lotería Mexicana: Vs Máquina (tu tabla vs la de la máquina, que se
+## marca sola) o 2 Jugadores (ambas tablas visibles a la vez y cada
+## quien marca la suya — no hay información que ocultar, como en la
+## Lotería de mesa real, así que no hace falta pasar el dispositivo).
+## El mazo se canta una por una; gana quien complete primero una línea
 ## (fila, columna o diagonal).
 
 const GAME_ID := "loteria"
@@ -34,34 +36,40 @@ const ICONS := {
 	"La Palma": "🌴", "La Maceta": "🪴", "El Arpa": "🎶", "La Rana": "🐸",
 }
 
-const HELP_TEXT := "Tú y la máquina reciben una tabla de 16 cartas cada uno, tomadas al azar del mazo de 54.
+const HELP_TEXT := "Cada quien recibe una tabla de 16 cartas, tomadas al azar del mazo de 54.
 
-- Toca 'Cantar siguiente' para revelar la próxima carta del mazo.
-- Si esa carta está en tu tabla, tócala para marcarla (la máquina se marca sola).
+- Toca 'Cantar siguiente' para revelar la próxima carta del mazo (cualquiera puede tocarlo).
+- Si esa carta está en tu tabla, tócala para marcarla.
 - Gana quien complete primero una línea de 4: fila, columna o diagonal.
 
-Si el mazo se acaba sin que nadie complete línea, es un empate."
+En 2 Jugadores ambas tablas están a la vista todo el tiempo — como en la Lotería real, no hay nada que ocultar. Si el mazo se acaba sin que nadie complete línea, es empate."
 
 var call_order: Array = []
 var call_index: int = 0
 var called_set: Dictionary = {}
 var current_call: String = ""
 
-var player_board: Array = []
-var player_marked: Array = []
-var bot_board: Array = []
-var bot_marked: Array = []
+var boards: Dictionary = {}
+var marked: Dictionary = {}
+var board_buttons: Dictionary = {}
+var mode: String = "pve"
 var game_over: bool = false
 
 var status_label: Label
 var call_label: Label
 var info_label: Label
 var call_btn: Button
-var board_buttons: Array = []
+var boards_container: VBoxContainer
 
 
 func _ready() -> void:
 	_build_ui()
+	UIKit.show_setup_overlay(self, "Lotería", true, false, _on_setup_confirmed)
+
+
+func _on_setup_confirmed(config: Dictionary) -> void:
+	mode = config["mode"]
+	_build_boards_ui()
 	_new_game()
 
 
@@ -107,38 +115,60 @@ func _build_ui() -> void:
 	info_label = UIKit.title_label("", 15, UIKit.COLOR_TEXT_DIM)
 	vbox.add_child(info_label)
 
-	vbox.add_child(UIKit.title_label("Tu tabla", 16, UIKit.COLOR_TEXT_DIM))
+	boards_container = VBoxContainer.new()
+	boards_container.add_theme_constant_override("separation", 12)
+	vbox.add_child(boards_container)
 
-	var board_panel := PanelContainer.new()
-	board_panel.add_theme_stylebox_override("panel", UIKit.stylebox(UIKit.COLOR_PANEL, UIKit.COLOR_ACCENT_2, 16, 2))
-	vbox.add_child(board_panel)
-	var board_margin := MarginContainer.new()
+	var restart_btn := Button.new()
+	restart_btn.text = "↻  Nueva partida / Modo"
+	restart_btn.custom_minimum_size = Vector2(220, 48)
+	UIKit.style_button(restart_btn, UIKit.COLOR_ACCENT_3)
+	restart_btn.pressed.connect(func() -> void: UIKit.show_setup_overlay(self, "Lotería", true, false, _on_setup_confirmed))
+	vbox.add_child(restart_btn)
+
+
+func _build_boards_ui() -> void:
+	for child: Node in boards_container.get_children():
+		child.queue_free()
+	board_buttons = {"player": [], "bot": []}
+
+	if mode == "pve":
+		boards_container.add_child(UIKit.title_label("Tu tabla", 16, UIKit.COLOR_TEXT_DIM))
+		boards_container.add_child(_build_board_panel("player", UIKit.COLOR_ACCENT_2))
+	else:
+		boards_container.add_child(UIKit.title_label("Jugador 1 (rosa)", 16, UIKit.COLOR_ACCENT))
+		boards_container.add_child(_build_board_panel("player", UIKit.COLOR_ACCENT))
+		boards_container.add_child(UIKit.title_label("Jugador 2 (teal)", 16, UIKit.COLOR_ACCENT_2))
+		boards_container.add_child(_build_board_panel("bot", UIKit.COLOR_ACCENT_2))
+
+
+func _build_board_panel(owner: String, accent: Color) -> PanelContainer:
+	var panel := PanelContainer.new()
+	panel.add_theme_stylebox_override("panel", UIKit.stylebox(UIKit.COLOR_PANEL, accent, 16, 2))
+	var m := MarginContainer.new()
 	for side: String in ["margin_left", "margin_right", "margin_top", "margin_bottom"]:
-		board_margin.add_theme_constant_override(side, 10)
-	board_panel.add_child(board_margin)
+		m.add_theme_constant_override(side, 10)
+	panel.add_child(m)
 
 	var grid := GridContainer.new()
 	grid.columns = 4
 	grid.add_theme_constant_override("h_separation", 4)
 	grid.add_theme_constant_override("v_separation", 4)
-	board_margin.add_child(grid)
+	m.add_child(grid)
 
+	var card_size: Vector2 = Vector2(150, 110) if mode == "pve" else Vector2(140, 100)
+	var list: Array = []
 	for i in range(16):
 		var btn := Button.new()
-		btn.custom_minimum_size = Vector2(150, 110)
-		btn.add_theme_font_size_override("font_size", 15)
+		btn.custom_minimum_size = card_size
+		btn.add_theme_font_size_override("font_size", 14)
 		btn.autowrap_mode = TextServer.AUTOWRAP_WORD
 		UIKit.style_button(btn, UIKit.COLOR_BG_LIGHT, 8)
-		btn.pressed.connect(_on_card_pressed.bind(i))
+		btn.pressed.connect(_on_card_pressed.bind(owner, i))
 		grid.add_child(btn)
-		board_buttons.append(btn)
-
-	var restart_btn := Button.new()
-	restart_btn.text = "↻  Nueva partida"
-	restart_btn.custom_minimum_size = Vector2(200, 48)
-	UIKit.style_button(restart_btn, UIKit.COLOR_ACCENT_3)
-	restart_btn.pressed.connect(_new_game)
-	vbox.add_child(restart_btn)
+		list.append(btn)
+	board_buttons[owner] = list
+	return panel
 
 
 func _new_game() -> void:
@@ -151,16 +181,15 @@ func _new_game() -> void:
 
 	var shuffled: Array = DECK.duplicate()
 	shuffled.shuffle()
-	player_board = shuffled.slice(0, 16)
-
+	boards["player"] = shuffled.slice(0, 16)
 	shuffled.shuffle()
-	bot_board = shuffled.slice(0, 16)
+	boards["bot"] = shuffled.slice(0, 16)
 
-	player_marked = []
-	bot_marked = []
+	marked["player"] = []
+	marked["bot"] = []
 	for i in range(16):
-		player_marked.append(false)
-		bot_marked.append(false)
+		marked["player"].append(false)
+		marked["bot"].append(false)
 
 	status_label.text = "Toca 'Cantar siguiente' para empezar"
 	status_label.add_theme_color_override("font_color", UIKit.COLOR_TEXT)
@@ -171,17 +200,25 @@ func _redraw_all() -> void:
 	call_label.text = "%s\n%s" % [ICONS.get(current_call, "🃏"), current_call] if current_call != "" else "—"
 	call_btn.disabled = game_over or call_index >= call_order.size()
 
-	var bot_count := 0
-	for m: bool in bot_marked:
-		if m:
-			bot_count += 1
-	info_label.text = "Cartas cantadas: %d/%d      Máquina marcó: %d/16" % [call_index, call_order.size(), bot_count]
+	if mode == "pve":
+		var bot_count := 0
+		for m: bool in marked["bot"]:
+			if m:
+				bot_count += 1
+		info_label.text = "Cartas cantadas: %d/%d      Máquina marcó: %d/16" % [call_index, call_order.size(), bot_count]
+		_redraw_board("player")
+	else:
+		info_label.text = "Cartas cantadas: %d/%d" % [call_index, call_order.size()]
+		_redraw_board("player")
+		_redraw_board("bot")
 
+
+func _redraw_board(owner: String) -> void:
 	for i in range(16):
-		var btn: Button = board_buttons[i]
-		var name: String = player_board[i]
+		var btn: Button = board_buttons[owner][i]
+		var name: String = boards[owner][i]
 		btn.text = "%s\n%s" % [ICONS.get(name, "🃏"), name]
-		if player_marked[i]:
+		if marked[owner][i]:
 			UIKit.style_button(btn, UIKit.COLOR_ACCENT_3, 8)
 			btn.add_theme_color_override("font_color", UIKit.COLOR_BG)
 		elif called_set.has(name):
@@ -190,11 +227,11 @@ func _redraw_all() -> void:
 			UIKit.style_button(btn, UIKit.COLOR_BG_LIGHT, 8)
 
 
-func _has_line(marked: Array) -> bool:
+func _has_line(m: Array) -> bool:
 	for r in range(4):
 		var row_ok := true
 		for c in range(4):
-			if not marked[r * 4 + c]:
+			if not m[r * 4 + c]:
 				row_ok = false
 				break
 		if row_ok:
@@ -203,7 +240,7 @@ func _has_line(marked: Array) -> bool:
 	for c in range(4):
 		var col_ok := true
 		for r in range(4):
-			if not marked[r * 4 + c]:
+			if not m[r * 4 + c]:
 				col_ok = false
 				break
 		if col_ok:
@@ -212,9 +249,9 @@ func _has_line(marked: Array) -> bool:
 	var diag1 := true
 	var diag2 := true
 	for i in range(4):
-		if not marked[i * 4 + i]:
+		if not m[i * 4 + i]:
 			diag1 = false
-		if not marked[i * 4 + (3 - i)]:
+		if not m[i * 4 + (3 - i)]:
 			diag2 = false
 	return diag1 or diag2
 
@@ -227,49 +264,60 @@ func _on_call_pressed() -> void:
 	call_index += 1
 	called_set[current_call] = true
 
-	for i in range(16):
-		if bot_board[i] == current_call:
-			bot_marked[i] = true
+	if mode == "pve":
+		for i in range(16):
+			if boards["bot"][i] == current_call:
+				marked["bot"][i] = true
 
 	_redraw_all()
 
-	if _has_line(bot_marked):
-		_end_game(false)
+	if mode == "pve" and _has_line(marked["bot"]):
+		_end_game("bot")
 		return
 
 	if call_index >= call_order.size():
 		status_label.text = "Última carta cantada"
 		status_label.add_theme_color_override("font_color", UIKit.COLOR_TEXT_DIM)
-		if not _has_line(player_marked):
+		var anyone_won: bool = _has_line(marked["player"]) or (mode == "pvp" and _has_line(marked["bot"]))
+		if not anyone_won:
 			_end_game_draw()
 
 
-func _on_card_pressed(i: int) -> void:
+func _on_card_pressed(owner: String, i: int) -> void:
 	if game_over:
 		return
-	var name: String = player_board[i]
+	if mode == "pve" and owner != "player":
+		return
+
+	var name: String = boards[owner][i]
 	if not called_set.has(name):
 		status_label.text = "'%s' todavía no ha salido" % name
 		status_label.add_theme_color_override("font_color", UIKit.COLOR_DANGER)
 		return
 
-	player_marked[i] = not player_marked[i]
+	marked[owner][i] = not marked[owner][i]
 	_redraw_all()
 
-	if _has_line(player_marked):
-		_end_game(true)
+	if _has_line(marked[owner]):
+		_end_game(owner)
 
 
-func _end_game(player_won: bool) -> void:
+func _end_game(winner: String) -> void:
 	game_over = true
-	if player_won:
-		status_label.text = "¡Lotería! Completaste la línea primero"
-		status_label.add_theme_color_override("font_color", UIKit.COLOR_ACCENT_3)
-		_record_result("wins")
+	if mode == "pve":
+		if winner == "player":
+			status_label.text = "¡Lotería! Completaste la línea primero"
+			status_label.add_theme_color_override("font_color", UIKit.COLOR_ACCENT_3)
+			_record_result("wins")
+		else:
+			status_label.text = "La máquina cantó línea antes que tú"
+			status_label.add_theme_color_override("font_color", UIKit.COLOR_DANGER)
+			_record_result("losses")
 	else:
-		status_label.text = "La máquina cantó línea antes que tú"
-		status_label.add_theme_color_override("font_color", UIKit.COLOR_DANGER)
-		_record_result("losses")
+		var label: String = "Jugador 1 (rosa)" if winner == "player" else "Jugador 2 (teal)"
+		status_label.text = "¡Lotería! Ganó %s" % label
+		status_label.add_theme_color_override("font_color", UIKit.COLOR_ACCENT_3)
+		AudioManager.play_win()
 	_redraw_all()
 
 
@@ -277,7 +325,8 @@ func _end_game_draw() -> void:
 	game_over = true
 	status_label.text = "Se acabó el mazo sin línea completa"
 	status_label.add_theme_color_override("font_color", UIKit.COLOR_TEXT_DIM)
-	_record_result("draws")
+	if mode == "pve":
+		_record_result("draws")
 	_redraw_all()
 
 
