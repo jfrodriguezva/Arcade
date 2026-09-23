@@ -294,6 +294,7 @@ func _win() -> void:
 
 
 func _record_result(won: bool) -> void:
+	AudioManager.play_win() if won else AudioManager.play_lose()
 	var stats: Dictionary = SaveManager.get_game_data(GAME_ID)
 	var key: String = "wins" if won else "losses"
 	stats[key] = stats.get(key, 0) + 1

@@ -266,6 +266,7 @@ func _check_stuck() -> void:
 
 
 func _record_result() -> void:
+	AudioManager.play_win()
 	var stats: Dictionary = SaveManager.get_game_data(GAME_ID)
 	stats["wins"] = stats.get("wins", 0) + 1
 	SaveManager.set_game_data(GAME_ID, stats)

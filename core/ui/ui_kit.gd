@@ -42,6 +42,8 @@ static func style_button(btn: Button, accent: Color = COLOR_ACCENT, radius: int 
 	btn.add_theme_color_override("font_hover_color", COLOR_TEXT)
 	btn.add_theme_color_override("font_pressed_color", COLOR_BG)
 	btn.add_theme_color_override("font_disabled_color", COLOR_TEXT_DIM)
+	if not btn.pressed.is_connected(AudioManager.play_click):
+		btn.pressed.connect(AudioManager.play_click)
 
 
 static func title_label(text: String, size: int = 36, color: Color = COLOR_TEXT) -> Label:

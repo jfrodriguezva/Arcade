@@ -502,6 +502,10 @@ func _end_game(winner_owner: String, is_stalemate: bool) -> void:
 
 
 func _record_result(key: String) -> void:
+	if key.begins_with("win") or key.begins_with("completed"):
+		AudioManager.play_win()
+	elif key.begins_with("loss") or key.begins_with("fail"):
+		AudioManager.play_lose()
 	var stats: Dictionary = SaveManager.get_game_data(GAME_ID)
 	stats[key] = stats.get(key, 0) + 1
 	SaveManager.set_game_data(GAME_ID, stats)
