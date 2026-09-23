@@ -8,7 +8,7 @@ extends Control
 ## Formas soportadas: "ship", "asteroid", "alien", "paddle", "ball",
 ## "cowboy", "bandit", "bullet", "ghost", "muncher", "pellet",
 ## "snow_player", "snow_enemy", "snowball", "bomber", "bomb", "blast",
-## "cursor_drone", "sentry", "critter", "eyes".
+## "cursor_drone", "sentry", "critter", "eyes", "ufo".
 
 var shape: String = "ball"
 var color: Color = Color.WHITE
@@ -76,6 +76,7 @@ func _draw() -> void:
 		"sentry": _draw_sentry(s)
 		"critter": _draw_critter(s)
 		"eyes": _draw_eyes(s)
+		"ufo": _draw_ufo(s)
 		_: _draw_ball(s)
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
@@ -299,6 +300,29 @@ func _draw_eyes(s: Vector2) -> void:
 	draw_circle(Vector2(w * 0.15, 0), w * 0.14, Color(0.97, 0.97, 1))
 	draw_circle(Vector2(-w * 0.15, 0) + look, w * 0.065, color2)
 	draw_circle(Vector2(w * 0.15, 0) + look, w * 0.065, color2)
+
+
+func _draw_ufo(s: Vector2) -> void:
+	## Platillo clásico de Asteroids: casco ancho + domo, con luces que
+	## parpadean según `phase`.
+	var w: float = s.x
+	var h: float = s.y
+	var hull := PackedVector2Array([
+		Vector2(-w * 0.5, 0), Vector2(-w * 0.22, -h * 0.16), Vector2(w * 0.22, -h * 0.16),
+		Vector2(w * 0.5, 0), Vector2(w * 0.22, h * 0.20), Vector2(-w * 0.22, h * 0.20),
+	])
+	_poly(hull, color)
+	_outline(hull, color.darkened(0.4), 1.6)
+	var dome := PackedVector2Array([
+		Vector2(-w * 0.22, -h * 0.16), Vector2(-w * 0.13, -h * 0.42), Vector2(w * 0.13, -h * 0.42), Vector2(w * 0.22, -h * 0.16),
+	])
+	_poly(dome, color2.darkened(0.1))
+	_outline(dome, color2.darkened(0.45), 1.3)
+	draw_line(Vector2(-w * 0.42, 0), Vector2(w * 0.42, 0), color.darkened(0.5), 1.4)
+	var lit: bool = fmod(phase * 3.0, 1.0) > 0.5
+	for i in 3:
+		var lx: float = -w * 0.28 + i * (w * 0.28)
+		draw_circle(Vector2(lx, h * 0.02), w * 0.045, (Color(1, 0.9, 0.4) if lit else color.darkened(0.2)))
 
 
 func _draw_muncher(s: Vector2) -> void:

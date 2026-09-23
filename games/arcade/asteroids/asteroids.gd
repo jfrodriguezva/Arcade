@@ -23,15 +23,30 @@ const TIER_RADIUS := [38.0, 22.0, 12.0]
 const TIER_POINTS := [20, 50, 100]
 const ASTEROID_COLORS := [UIKit.COLOR_TEXT_DIM, UIKit.COLOR_ACCENT_2, UIKit.COLOR_ACCENT_3]
 
+## Platillos: como en el arcade original, el grande dispara a lo tonto y
+## el chico (aparece desde nivel 4) apunta hacia la nave con algo de error.
+const UFO_LARGE_RADIUS := 22.0
+const UFO_SMALL_RADIUS := 13.0
+const UFO_LARGE_POINTS := 200
+const UFO_SMALL_POINTS := 1000
+const UFO_SPEED := 90.0
+const UFO_BULLET_SPEED := 300.0
+const UFO_BULLET_LIFETIME := 1.6
+const EXTRA_LIFE_SCORE := 10000
+const HYPERSPACE_RISK := 0.10
+
 const HELP_TEXT := "Controla tu nave con los botones de abajo:
 
 - ◀ / ▶ giran la nave.
 - ▲ acelera en la dirección a la que apuntas (la nave tiene inercia, sigue moviéndose aunque sueltes el botón).
 - ● dispara.
+- ✦ hiperespacio: teletransporte de emergencia a una posición al azar. Es arriesgado — hay una pequeña probabilidad de que la nave no resista el salto.
 
 Si sales por un borde de la pantalla, apareces por el lado opuesto. Destruye los asteroides grandes: se dividen en 2 más chicos (y esos en 2 más chicos todavía) hasta desaparecer — entre más chico, más puntos vale.
 
-Chocar con un asteroide te quita una vida. Hay 10 niveles, cada uno con más asteroides y más rápidos. Ganas al limpiar los 10; pierdes si se acaban tus 3 vidas."
+De vez en cuando aparece un platillo volador: el grande dispara al azar, el chico (desde nivel 4) te apunta directamente. Destrúyelos para puntos extra antes de que te disparen. Ganas una vida extra cada 10,000 puntos.
+
+Chocar con un asteroide o con un disparo del platillo te quita una vida. Hay 10 niveles, cada uno con más asteroides y más rápidos. Ganas al limpiar los 10; pierdes si se acaban tus 3 vidas."
 
 var ship_pos: Vector2 = Vector2.ZERO
 var ship_vel: Vector2 = Vector2.ZERO
@@ -47,9 +62,14 @@ var bullets: Array = []
 var asteroids: Array = []
 var _asteroid_seed_counter: int = 0
 
+var ufo: Dictionary = {}
+var ufo_bullets: Array = []
+var ufo_spawn_timer: float = 8.0
+
 var score: int = 0
 var lives: int = 3
 var level: int = 1
+var next_extra_life: int = EXTRA_LIFE_SCORE
 var state: String = "playing" # playing | game_over | won
 
 var play_area: Control
@@ -150,6 +170,16 @@ func _build_ui() -> void:
 	fire_btn.pressed.connect(_on_fire_pressed)
 	controls.add_child(fire_btn)
 
+	var spacer2 := Control.new()
+	spacer2.custom_minimum_size = Vector2(10, 1)
+	controls.add_child(spacer2)
+
+	var hyperspace_btn := _make_hold_button("✦", UIKit.COLOR_DANGER)
+	hyperspace_btn.custom_minimum_size = Vector2(72, 88)
+	hyperspace_btn.add_theme_font_size_override("font_size", 26)
+	hyperspace_btn.pressed.connect(_on_hyperspace_pressed)
+	controls.add_child(hyperspace_btn)
+
 	var restart_btn := Button.new()
 	restart_btn.text = "↻  Nueva partida"
 	restart_btn.custom_minimum_size = Vector2(200, 48)
@@ -171,10 +201,16 @@ func _new_game() -> void:
 	score = 0
 	lives = 3
 	level = 1
+	next_extra_life = EXTRA_LIFE_SCORE
 	state = "playing"
 	for b: Dictionary in bullets:
 		b["view"].queue_free()
 	bullets.clear()
+	for b: Dictionary in ufo_bullets:
+		b["view"].queue_free()
+	ufo_bullets.clear()
+	_despawn_ufo()
+	ufo_spawn_timer = 8.0
 	status_label.visible = false
 	_reset_ship()
 	_update_hud()
@@ -245,6 +281,95 @@ func _on_fire_pressed() -> void:
 	bullets.append({"pos": bullet_pos, "vel": dir * BULLET_SPEED + ship_vel, "life": BULLET_LIFETIME, "view": view})
 
 
+func _on_hyperspace_pressed() -> void:
+	if state != "playing" or invulnerable_time > 0.0:
+		return
+	AudioManager.play_click()
+	if randf() < HYPERSPACE_RISK:
+		_lose_life()
+		return
+	ship_pos = Vector2(randf() * PLAY_W, randf() * PLAY_H)
+	ship_vel = Vector2.ZERO
+	invulnerable_time = 0.8
+
+
+func _spawn_ufo() -> void:
+	var small: bool = level >= 4 and randf() < min(0.25 + level * 0.04, 0.6)
+	var radius: float = UFO_SMALL_RADIUS if small else UFO_LARGE_RADIUS
+	var from_left: bool = randf() < 0.5
+	var pos := Vector2(-radius if from_left else PLAY_W + radius, randf_range(PLAY_H * 0.15, PLAY_H * 0.85))
+	var vel := Vector2((UFO_SPEED if from_left else -UFO_SPEED), 0)
+	var view := EntitySprite.new()
+	view.size = Vector2(radius * 2.2, radius * 1.6)
+	view.position = pos - view.size / 2.0
+	view.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	view.setup("ufo", UIKit.COLOR_DANGER if small else UIKit.COLOR_ACCENT_2, UIKit.COLOR_TEXT)
+	play_area.add_child(view)
+	ufo = {
+		"pos": pos, "vel": vel, "radius": radius, "small": small, "view": view,
+		"fire_timer": randf_range(0.6, 1.4), "turn_timer": randf_range(0.8, 1.6), "life": 14.0,
+	}
+
+
+func _despawn_ufo() -> void:
+	if not ufo.is_empty():
+		ufo["view"].queue_free()
+		ufo = {}
+
+
+func _update_ufo(delta: float) -> void:
+	if ufo.is_empty():
+		ufo_spawn_timer -= delta
+		if ufo_spawn_timer <= 0.0 and state == "playing":
+			_spawn_ufo()
+			ufo_spawn_timer = randf_range(14.0, 20.0) - level * 0.6
+		return
+
+	ufo["life"] -= delta
+	if ufo["life"] <= 0.0:
+		_despawn_ufo()
+		return
+
+	ufo["turn_timer"] -= delta
+	if ufo["turn_timer"] <= 0.0:
+		ufo["turn_timer"] = randf_range(0.7, 1.5)
+		ufo["vel"].y = randf_range(-70.0, 70.0)
+	ufo["pos"] += ufo["vel"] * delta
+	if ufo["pos"].y < 0.0 or ufo["pos"].y > PLAY_H:
+		ufo["vel"].y = -ufo["vel"].y
+	if ufo["pos"].x < -ufo["radius"] * 2.0 or ufo["pos"].x > PLAY_W + ufo["radius"] * 2.0:
+		_despawn_ufo()
+		return
+	ufo["view"].position = ufo["pos"] - ufo["view"].size / 2.0
+
+	ufo["fire_timer"] -= delta
+	if ufo["fire_timer"] <= 0.0:
+		ufo["fire_timer"] = randf_range(0.9, 1.8)
+		_ufo_fire()
+
+
+func _ufo_fire() -> void:
+	if ufo.is_empty():
+		return
+	var dir: Vector2
+	if ufo["small"]:
+		var to_ship: Vector2 = (ship_pos - ufo["pos"]).normalized()
+		var spread: float = deg_to_rad(randf_range(-10.0, 10.0) - level * 0.5)
+		dir = to_ship.rotated(spread)
+	else:
+		dir = Vector2(1, 0).rotated(randf() * TAU)
+	var view := EntitySprite.new()
+	view.size = Vector2(9, 22)
+	view.position = ufo["pos"] - view.size / 2.0
+	view.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	view.setup("bullet", UIKit.COLOR_DANGER)
+	# El shape "bullet" apunta hacia arriba en facing_deg=0 (misma convención
+	# que la nave: rot = atan2(dir.x, -dir.y), ver _on_fire_pressed).
+	view.set_facing(rad_to_deg(atan2(dir.x, -dir.y)))
+	play_area.add_child(view)
+	ufo_bullets.append({"pos": ufo["pos"], "vel": dir * UFO_BULLET_SPEED, "life": UFO_BULLET_LIFETIME, "view": view})
+
+
 func _wrap_pos(pos: Vector2) -> Vector2:
 	var p: Vector2 = pos
 	if p.x < 0.0:
@@ -298,6 +423,18 @@ func _process(delta: float) -> void:
 		a["pos"] = _wrap_pos(a["pos"] + a["vel"] * delta)
 		a["view"].position = a["pos"] - a["view"].size / 2.0
 
+	_update_ufo(delta)
+
+	for i in range(ufo_bullets.size() - 1, -1, -1):
+		var ub: Dictionary = ufo_bullets[i]
+		ub["pos"] += ub["vel"] * delta
+		ub["life"] -= delta
+		if ub["life"] <= 0.0 or ub["pos"].x < 0.0 or ub["pos"].x > PLAY_W or ub["pos"].y < 0.0 or ub["pos"].y > PLAY_H:
+			ub["view"].queue_free()
+			ufo_bullets.remove_at(i)
+			continue
+		ub["view"].position = ub["pos"] - ub["view"].size / 2.0
+
 	_check_bullet_hits()
 	_check_ship_collision()
 
@@ -310,15 +447,33 @@ func _check_bullet_hits() -> void:
 		if i >= bullets.size():
 			continue
 		var b: Dictionary = bullets[i]
+		var hit: bool = false
 		for j in range(asteroids.size() - 1, -1, -1):
 			var a: Dictionary = asteroids[j]
 			if b["pos"].distance_to(a["pos"]) <= a["radius"] + 4.0:
-				score += TIER_POINTS[a["tier"]]
-				_update_hud()
+				_award(TIER_POINTS[a["tier"]])
 				_break_asteroid(a, j)
 				b["view"].queue_free()
 				bullets.remove_at(i)
+				hit = true
 				break
+		if hit or ufo.is_empty():
+			continue
+		if b["pos"].distance_to(ufo["pos"]) <= ufo["radius"] + 4.0:
+			_award(UFO_SMALL_POINTS if ufo["small"] else UFO_LARGE_POINTS)
+			_despawn_ufo()
+			ufo_spawn_timer = randf_range(10.0, 16.0)
+			b["view"].queue_free()
+			bullets.remove_at(i)
+
+
+func _award(points: int) -> void:
+	score += points
+	while score >= next_extra_life:
+		next_extra_life += EXTRA_LIFE_SCORE
+		lives += 1
+		AudioManager.play_place()
+	_update_hud()
 
 
 func _break_asteroid(a: Dictionary, index: int) -> void:
@@ -337,6 +492,17 @@ func _check_ship_collision() -> void:
 		return
 	for a: Dictionary in asteroids:
 		if ship_pos.distance_to(a["pos"]) <= a["radius"] + SHIP_RADIUS:
+			_lose_life()
+			return
+	if not ufo.is_empty() and ship_pos.distance_to(ufo["pos"]) <= ufo["radius"] + SHIP_RADIUS:
+		_despawn_ufo()
+		_lose_life()
+		return
+	for i in range(ufo_bullets.size() - 1, -1, -1):
+		var ub: Dictionary = ufo_bullets[i]
+		if ship_pos.distance_to(ub["pos"]) <= SHIP_RADIUS * 0.8:
+			ub["view"].queue_free()
+			ufo_bullets.remove_at(i)
 			_lose_life()
 			return
 
