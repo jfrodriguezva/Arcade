@@ -8,7 +8,7 @@ extends Control
 ## Formas soportadas: "ship", "asteroid", "alien", "paddle", "ball",
 ## "cowboy", "bandit", "bullet", "ghost", "muncher", "pellet",
 ## "snow_player", "snow_enemy", "snowball", "bomber", "bomb", "blast",
-## "cursor_drone", "sentry", "critter".
+## "cursor_drone", "sentry", "critter", "eyes".
 
 var shape: String = "ball"
 var color: Color = Color.WHITE
@@ -75,6 +75,7 @@ func _draw() -> void:
 		"cursor_drone": _draw_cursor_drone(s)
 		"sentry": _draw_sentry(s)
 		"critter": _draw_critter(s)
+		"eyes": _draw_eyes(s)
 		_: _draw_ball(s)
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
@@ -285,6 +286,19 @@ func _draw_ghost(s: Vector2) -> void:
 	draw_circle(Vector2(w * 0.15, -h * 0.08), w * 0.13, Color(0.97, 0.97, 1))
 	draw_circle(Vector2(-w * 0.15, -h * 0.02), w * 0.06, Color(0.15, 0.2, 0.5))
 	draw_circle(Vector2(w * 0.15, -h * 0.02), w * 0.06, Color(0.15, 0.2, 0.5))
+
+
+func _draw_eyes(s: Vector2) -> void:
+	## Fantasma "comido": solo los ojos regresan flotando a la casa. El nodo
+	## completo ya rota según `facing_deg` (ver _draw arriba), así que aquí
+	## basta un desplazamiento fijo "hacia adelante" en el espacio local.
+	var w: float = s.x
+	var h: float = s.y
+	var look: Vector2 = Vector2(w * 0.045, 0)
+	draw_circle(Vector2(-w * 0.15, 0), w * 0.14, Color(0.97, 0.97, 1))
+	draw_circle(Vector2(w * 0.15, 0), w * 0.14, Color(0.97, 0.97, 1))
+	draw_circle(Vector2(-w * 0.15, 0) + look, w * 0.065, color2)
+	draw_circle(Vector2(w * 0.15, 0) + look, w * 0.065, color2)
 
 
 func _draw_muncher(s: Vector2) -> void:

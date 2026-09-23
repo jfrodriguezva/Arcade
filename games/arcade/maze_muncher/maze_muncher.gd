@@ -17,20 +17,38 @@ const VULNERABLE_DURATION := 6.0
 const MAX_LEVEL := 10
 const DIRS := [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]
 
+const GHOST_NAMES := ["blinky", "pinky", "inky", "clyde", "pinky"]
 const GHOST_COLORS := [
-	Color(0.937, 0.325, 0.314),  # rojo (estilo Blinky)
-	Color(1.0, 0.478, 0.706),    # rosa (estilo Pinky)
-	Color(0.306, 0.804, 0.769),  # cian (estilo Inky)
-	Color(1.0, 0.596, 0.208),    # naranja (estilo Clyde)
+	Color(0.937, 0.325, 0.314),  # rojo (Blinky, persigue directo)
+	Color(1.0, 0.478, 0.706),    # rosa (Pinky, embosca adelante)
+	Color(0.306, 0.804, 0.769),  # cian (Inky, flanquea con Blinky)
+	Color(1.0, 0.596, 0.208),    # naranja (Clyde, tímido de cerca)
 	Color(0.678, 0.478, 0.925),  # morado (5to fantasma, niveles altos)
 ]
 const GHOST_SCARED_COLOR := Color(0.235, 0.318, 0.831)
 const GHOST_SCARED_FLASH := Color(0.94, 0.95, 1.0)
+const EATEN_EYE_COLOR := Color(0.2, 0.3, 0.6)
+
+## Alternancia clásica dispersión/persecución: cada fantasma huye a su
+## esquina y luego caza, y se invierte de dirección en cada cambio de modo.
+const MODE_SCHEDULE := [
+	["scatter", 7.0], ["chase", 20.0],
+	["scatter", 7.0], ["chase", 20.0],
+	["scatter", 5.0], ["chase", 999999.0],
+]
+const COMBO_SCORES := [200, 400, 800, 1600]
+const FRUIT_SCORES := [100, 300, 500, 700, 1000, 2000, 3000, 5000, 5000, 5000]
+const FRUIT_DURATION := 10.0
+const FRIGHTENED_SPEED_MULT := 1.5
+const EATEN_SPEED_MULT := 0.55
 
 const HELP_TEXT := "Muévete por el laberinto con las flechas y come todos los puntos.
 
-- Las bolitas grandes (amarillas) vuelven vulnerables a los fantasmas por unos segundos: tócalos en ese estado para comerlos y ganar puntos extra.
-- Si un fantasma te toca cuando NO está vulnerable, pierdes una vida.
+- Cada fantasma tiene su propia personalidad, como en el juego original: el rojo te persigue directo, el rosa embosca varias celdas por delante, el cian flanquea combinando tu posición con la del rojo, y el naranja huye si te acercas demasiado.
+- Los fantasmas alternan entre 'dispersión' (huyen a su esquina) y 'persecución' (te cazan) — cuando cambian de modo, invierten su dirección, igual que en el arcade clásico.
+- Las bolitas grandes (amarillas) los vuelven vulnerables: tócalos en ese estado para comerlos (los puntos se duplican por cada fantasma seguido: 200, 400, 800, 1600). Sus ojos vuelven corriendo a la casa y se recuperan.
+- De vez en cuando aparece una fruta bonus cerca del centro: tómala antes de que desaparezca para puntos extra.
+- Si un fantasma te toca cuando NO está vulnerable ni son solo ojos, pierdes una vida.
 
 Limpia todos los puntos del laberinto para pasar de nivel (se genera uno nuevo, con más fantasmas y más rápidos). Hay 10 niveles. Pierdes si se acaban tus 3 vidas."
 
@@ -45,8 +63,23 @@ var facing_dir: Vector2i = Vector2i(1, 0)
 var move_timer: float = 0.0
 var vulnerable_timer: float = 0.0
 var anim_time: float = 0.0
+var level_time: float = 0.0
 
 var ghosts: Array = []
+
+## Dispersión/persecución global (sincroniza a todos los fantasmas que no
+## estén asustados o regresando como ojos).
+var mode_index: int = 0
+var mode_timer: float = 0.0
+var global_mode: String = "scatter"
+var frightened_combo: int = 0
+
+var dots_total: int = 0
+var dots_eaten: int = 0
+var fruit_spawn_count: int = 0
+var fruit_active: bool = false
+var fruit_timer: float = 0.0
+var fruit_cell: Vector2i = Vector2i.ZERO
 
 var score: int = 0
 var lives: int = 3
@@ -250,6 +283,20 @@ func _draw_dots() -> void:
 			elif has_dot[y][x]:
 				dot_layer.draw_circle(c, CELL * 0.085, Color(0.95, 0.87, 0.65, 0.9))
 
+	if fruit_active:
+		_draw_fruit(Vector2(fruit_cell.x * CELL + CELL / 2.0, fruit_cell.y * CELL + CELL / 2.0), pulse)
+
+
+func _draw_fruit(c: Vector2, pulse: float) -> void:
+	## Fruta bonus: un ícono de cereza simple, sin depender de EntitySprite
+	## (aparece una sola vez a la vez, así que el costo es insignificante).
+	var r: float = CELL * 0.16 * pulse
+	dot_layer.draw_line(c + Vector2(0, -r * 1.6), c + Vector2(r * 0.4, -r * 2.4), Color(0.35, 0.6, 0.25), 2.0)
+	dot_layer.draw_circle(c + Vector2(-r * 0.55, r * 0.15), r, UIKit.COLOR_DANGER)
+	dot_layer.draw_circle(c + Vector2(r * 0.55, r * 0.35), r, UIKit.COLOR_DANGER)
+	dot_layer.draw_circle(c + Vector2(-r * 0.55 - r * 0.3, r * 0.15 - r * 0.3), r * 0.3, Color(1, 1, 1, 0.5))
+	dot_layer.draw_circle(c + Vector2(r * 0.55 - r * 0.3, r * 0.35 - r * 0.3), r * 0.3, Color(1, 1, 1, 0.5))
+
 
 func _set_dir(d: Vector2i) -> void:
 	current_dir = d
@@ -336,6 +383,13 @@ func _setup_level() -> void:
 	has_dot[player_cell.y][player_cell.x] = false
 	current_dir = Vector2i.ZERO
 	vulnerable_timer = 0.0
+	level_time = 0.0
+	mode_index = 0
+	mode_timer = 0.0
+	global_mode = "scatter"
+	frightened_combo = 0
+	fruit_spawn_count = 0
+	fruit_active = false
 	player_view.position = _piece_pos(player_cell)
 	player_view.set_facing(_dir_to_facing_deg(facing_dir))
 	player_view.set_phase(0.0)
@@ -349,13 +403,32 @@ func _setup_level() -> void:
 		has_dot[g.y][g.x] = false
 		has_power[g.y][g.x] = true
 
+	fruit_cell = _room_to_grid(Vector2i(1, ROOMS_H / 2))
+	has_dot[fruit_cell.y][fruit_cell.x] = false
+
+	dots_total = 0
+	for y in range(MAZE_H):
+		for x in range(MAZE_W):
+			if has_dot[y][x]:
+				dots_total += 1
+	dots_eaten = 0
+
 	for g: Dictionary in ghosts:
 		g["view"].queue_free()
 	ghosts.clear()
 
+	# Esquinas de dispersión: cada fantasma "vive" en una esquina del
+	# laberinto generado, igual que en el juego clásico.
+	var scatter_corners: Dictionary = {
+		"blinky": _room_to_grid(Vector2i(ROOMS_W - 1, 0)),
+		"pinky": _room_to_grid(Vector2i(0, 0)),
+		"inky": _room_to_grid(Vector2i(ROOMS_W - 1, ROOMS_H - 1)),
+		"clyde": _room_to_grid(Vector2i(0, ROOMS_H - 1)),
+	}
+
 	var spawn_rooms: Array = [
-		Vector2i(ROOMS_W - 1, 0), Vector2i(0, ROOMS_H - 1), Vector2i(ROOMS_W - 1, ROOMS_H - 1),
-		Vector2i(ROOMS_W / 2, 0), Vector2i(0, 0),
+		Vector2i(ROOMS_W / 2, ROOMS_H / 2), Vector2i(ROOMS_W - 1, 0), Vector2i(0, ROOMS_H - 1),
+		Vector2i(ROOMS_W - 1, ROOMS_H - 1), Vector2i(0, 0),
 	]
 	var ghost_count: int = min(1 + level / 2, 5)
 	var ghost_interval: float = max(0.11, 0.26 - level * 0.014)
@@ -363,16 +436,21 @@ func _setup_level() -> void:
 		var spawn: Vector2i = _room_to_grid(spawn_rooms[i % spawn_rooms.size()])
 		has_dot[spawn.y][spawn.x] = false
 		var base_color: Color = GHOST_COLORS[i % GHOST_COLORS.size()]
+		var g_name: String = GHOST_NAMES[i % GHOST_NAMES.size()]
 		var view := EntitySprite.new()
 		view.size = Vector2(PIECE_SIZE, PIECE_SIZE)
 		view.position = _piece_pos(spawn)
 		view.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		view.setup("ghost", base_color, base_color.lightened(0.35), i)
+		view.visible = i == 0
 		play_area.add_child(view)
 		ghosts.append({
-			"pos": spawn, "spawn": spawn, "last_pos": Vector2i(-99, -99),
+			"pos": spawn, "spawn": spawn, "dir": Vector2i.ZERO,
 			"view": view, "interval": ghost_interval, "timer": 0.0,
 			"base_color": base_color, "phase_offset": float(i) * 0.27,
+			"name": g_name, "scatter_corner": scatter_corners.get(g_name, spawn),
+			"mode": "scatter" if i == 0 else "inactive",
+			"release_time": 0.0 if i == 0 else 4.0 * i,
 		})
 
 	status_label.text = "Nivel %d / %d" % [level, MAX_LEVEL]
@@ -411,13 +489,40 @@ func _process(delta: float) -> void:
 		return
 
 	anim_time += delta
+	level_time += delta
 	for g: Dictionary in ghosts:
 		g["view"].set_phase(anim_time * 0.6 + float(g["phase_offset"]))
+
+	# Libera fantasmas dormidos cuando les toca salir de la "casa".
+	for g: Dictionary in ghosts:
+		if g["mode"] == "inactive" and level_time >= g["release_time"]:
+			g["mode"] = global_mode
+			g["view"].visible = true
+
+	# Dispersión/persecución alternadas; al cambiar de modo los fantasmas
+	# (que no estén asustados o volviendo como ojos) invierten dirección.
+	if mode_index < MODE_SCHEDULE.size() - 1:
+		mode_timer += delta
+		if mode_timer >= float(MODE_SCHEDULE[mode_index][1]):
+			mode_timer = 0.0
+			mode_index += 1
+			global_mode = MODE_SCHEDULE[mode_index][0]
+			for g: Dictionary in ghosts:
+				if g["mode"] == "scatter" or g["mode"] == "chase":
+					g["mode"] = global_mode
+					g["dir"] = -g["dir"]
+
+	if fruit_active:
+		fruit_timer -= delta
+		if fruit_timer <= 0.0:
+			fruit_active = false
 
 	if vulnerable_timer > 0.0:
 		vulnerable_timer -= delta
 		var flashing: bool = vulnerable_timer < 1.5 and int(vulnerable_timer * 6.0) % 2 == 0
 		for g: Dictionary in ghosts:
+			if g["mode"] != "frightened":
+				continue
 			if flashing:
 				g["view"].color = GHOST_SCARED_FLASH
 				g["view"].color2 = GHOST_SCARED_COLOR
@@ -427,6 +532,9 @@ func _process(delta: float) -> void:
 			g["view"].queue_redraw()
 		if vulnerable_timer <= 0.0:
 			for g: Dictionary in ghosts:
+				if g["mode"] != "frightened":
+					continue
+				g["mode"] = global_mode
 				var base_color: Color = g["base_color"]
 				g["view"].color = base_color
 				g["view"].color2 = base_color.lightened(0.35)
@@ -443,7 +551,12 @@ func _process(delta: float) -> void:
 		if current_dir != Vector2i.ZERO:
 			_try_move_player()
 		for g: Dictionary in ghosts:
-			g["timer"] += delta
+			var mult: float = 1.0
+			if g["mode"] == "frightened":
+				mult = FRIGHTENED_SPEED_MULT
+			elif g["mode"] == "eaten":
+				mult = EATEN_SPEED_MULT
+			g["timer"] += delta / mult
 		for g: Dictionary in ghosts:
 			if g["timer"] >= g["interval"]:
 				g["timer"] = 0.0
@@ -461,68 +574,159 @@ func _try_move_player() -> void:
 	if has_dot[next.y][next.x]:
 		has_dot[next.y][next.x] = false
 		score += 10
+		dots_eaten += 1
+		_maybe_spawn_fruit()
 		_update_hud()
 	if has_power[next.y][next.x]:
 		has_power[next.y][next.x] = false
 		score += 50
 		vulnerable_timer = VULNERABLE_DURATION
+		frightened_combo = 0
 		for g: Dictionary in ghosts:
+			if g["mode"] != "scatter" and g["mode"] != "chase":
+				continue
+			g["mode"] = "frightened"
+			g["dir"] = -g["dir"]
 			g["view"].color = GHOST_SCARED_COLOR
 			g["view"].color2 = GHOST_SCARED_FLASH
 			g["view"].queue_redraw()
+		_update_hud()
+
+	if fruit_active and next == fruit_cell:
+		fruit_active = false
+		var bonus: int = FRUIT_SCORES[min(level - 1, FRUIT_SCORES.size() - 1)]
+		score += bonus
 		_update_hud()
 
 	if _all_dots_eaten():
 		_advance_level()
 
 
+func _maybe_spawn_fruit() -> void:
+	if dots_total <= 0:
+		return
+	var ratio: float = float(dots_eaten) / float(dots_total)
+	if fruit_spawn_count == 0 and ratio >= 0.3:
+		fruit_spawn_count = 1
+		fruit_active = true
+		fruit_timer = FRUIT_DURATION
+	elif fruit_spawn_count == 1 and ratio >= 0.7:
+		fruit_spawn_count = 2
+		fruit_active = true
+		fruit_timer = FRUIT_DURATION
+
+
+func _ghost_by_name(g_name: String) -> Dictionary:
+	for g: Dictionary in ghosts:
+		if g["name"] == g_name:
+			return g
+	return {}
+
+
+func _chase_target(g: Dictionary) -> Vector2i:
+	## Objetivos de persecución clásicos: Blinky va directo, Pinky embosca
+	## varias celdas por delante, Inky flanquea usando a Blinky de pivote,
+	## y Clyde caza igual que Blinky salvo que esté cerca (ahí huye).
+	match g["name"]:
+		"blinky":
+			return player_cell
+		"pinky":
+			return player_cell + facing_dir * 4
+		"inky":
+			var blinky: Dictionary = _ghost_by_name("blinky")
+			var blinky_pos: Vector2i = blinky.get("pos", g["pos"])
+			var pivot: Vector2i = player_cell + facing_dir * 2
+			return pivot * 2 - blinky_pos
+		"clyde":
+			if Vector2(g["pos"]).distance_to(Vector2(player_cell)) > 8.0:
+				return player_cell
+			return g["scatter_corner"]
+		_:
+			return player_cell
+
+
 func _move_ghost(g: Dictionary) -> void:
+	if g["mode"] == "inactive":
+		return
+
+	var target: Vector2i
+	var is_frightened: bool = g["mode"] == "frightened"
+	var is_eaten: bool = g["mode"] == "eaten"
+	if is_eaten:
+		target = g["spawn"]
+	elif is_frightened:
+		target = Vector2i.ZERO  # sin usar: en asustado se elige al azar
+	elif g["mode"] == "scatter":
+		target = g["scatter_corner"]
+	else:
+		target = _chase_target(g)
+
+	# Regla clásica: nunca invierte su dirección salvo en un cambio de modo
+	# o si es un callejón sin salida (ahí no queda más remedio).
+	var reverse_dir: Vector2i = -g["dir"]
 	var options: Array = []
 	for d: Vector2i in DIRS:
 		var n: Vector2i = g["pos"] + d
-		if _is_open(n) and n != g["last_pos"]:
-			options.append(n)
+		if _is_open(n) and (is_eaten or d != reverse_dir or g["dir"] == Vector2i.ZERO):
+			options.append({"dir": d, "pos": n})
 	if options.is_empty():
 		for d: Vector2i in DIRS:
 			var n: Vector2i = g["pos"] + d
 			if _is_open(n):
-				options.append(n)
+				options.append({"dir": d, "pos": n})
 		if options.is_empty():
 			return
 
-	var chosen: Vector2i = options[0]
-	if vulnerable_timer > 0.0:
-		var best_dist := -1.0
-		for o: Vector2i in options:
-			var dist: float = Vector2(o).distance_to(Vector2(player_cell))
-			if dist > best_dist:
-				best_dist = dist
-				chosen = o
+	var chosen: Dictionary = options[0]
+	if is_frightened:
+		chosen = options[randi() % options.size()]
 	else:
-		var chase_chance: float = min(0.5 + level * 0.05, 0.9)
-		if randf() < chase_chance:
-			var best_dist2 := INF
-			for o: Vector2i in options:
-				var dist2: float = Vector2(o).distance_to(Vector2(player_cell))
-				if dist2 < best_dist2:
-					best_dist2 = dist2
-					chosen = o
-		else:
-			chosen = options[randi() % options.size()]
+		var best := INF
+		for o: Dictionary in options:
+			var dist: float = Vector2(o["pos"]).distance_to(Vector2(target))
+			if dist < best:
+				best = dist
+				chosen = o
 
-	g["last_pos"] = g["pos"]
-	g["pos"] = chosen
-	g["view"].position = _piece_pos(chosen)
+	g["dir"] = chosen["dir"]
+	g["pos"] = chosen["pos"]
+	g["view"].position = _piece_pos(chosen["pos"])
+	if is_eaten:
+		# Solo los ojos (no el cuerpo del fantasma) giran para "mirar" hacia
+		# donde vuelan de regreso a la casa; el cuerpo normal se mantiene
+		# siempre en pie, como en el arcade clásico.
+		g["view"].set_facing(_dir_to_facing_deg(chosen["dir"]))
+
+	if is_eaten and g["pos"] == g["spawn"]:
+		_respawn_ghost(g)
+
+
+func _respawn_ghost(g: Dictionary) -> void:
+	g["mode"] = global_mode
+	g["dir"] = Vector2i.ZERO
+	g["view"].shape = "ghost"
+	g["view"].color = g["base_color"]
+	g["view"].color2 = g["base_color"].lightened(0.35)
+	g["view"].facing_deg = 0.0
+	g["view"].queue_redraw()
 
 
 func _check_ghost_collision() -> void:
 	for g: Dictionary in ghosts:
+		if g["mode"] == "inactive" or g["mode"] == "eaten":
+			continue
 		if g["pos"] == player_cell:
-			if vulnerable_timer > 0.0:
-				score += 200
+			if g["mode"] == "frightened":
+				frightened_combo += 1
+				var pts: int = COMBO_SCORES[min(frightened_combo - 1, COMBO_SCORES.size() - 1)]
+				score += pts
 				_update_hud()
-				g["pos"] = g["spawn"]
-				g["view"].position = _piece_pos(g["spawn"])
+				g["mode"] = "eaten"
+				g["dir"] = -g["dir"]
+				g["view"].shape = "eyes"
+				g["view"].color = Color(0.97, 0.97, 1)
+				g["view"].color2 = EATEN_EYE_COLOR
+				g["view"].queue_redraw()
 			else:
 				_lose_life()
 			return
@@ -543,9 +747,27 @@ func _lose_life() -> void:
 	player_cell = _room_to_grid(Vector2i(0, 0))
 	player_view.position = _piece_pos(player_cell)
 	player_view.set_phase(0.0)
-	for g: Dictionary in ghosts:
+
+	level_time = 0.0
+	mode_index = 0
+	mode_timer = 0.0
+	global_mode = "scatter"
+	frightened_combo = 0
+	vulnerable_timer = 0.0
+	fruit_active = false
+
+	for i in ghosts.size():
+		var g: Dictionary = ghosts[i]
 		g["pos"] = g["spawn"]
+		g["dir"] = Vector2i.ZERO
+		g["mode"] = "scatter" if i == 0 else "inactive"
 		g["view"].position = _piece_pos(g["spawn"])
+		g["view"].visible = i == 0
+		g["view"].shape = "ghost"
+		g["view"].color = g["base_color"]
+		g["view"].color2 = g["base_color"].lightened(0.35)
+		g["view"].facing_deg = 0.0
+		g["view"].queue_redraw()
 
 	if lives <= 0:
 		state = "game_over"
