@@ -188,6 +188,14 @@ var games: Array[Dictionary] = [
 		"scene": "res://games/arcade/galaga_swarm/galaga_swarm.tscn",
 		"enabled": true,
 	},
+	{
+		"id": "bomber_maze",
+		"title": "Laberinto de Bombas",
+		"icon": "💣",
+		"category": "arcade",
+		"scene": "res://games/arcade/bomber_maze/bomber_maze.tscn",
+		"enabled": true,
+	},
 ]
 
 var current_game_id: String = ""
