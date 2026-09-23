@@ -46,6 +46,13 @@ func _build_ui() -> void:
 	var title_label := UIKit.title_label("🕹  ARCADE PLATFORM", 34, UIKit.COLOR_ACCENT_3)
 	vbox.add_child(title_label)
 
+	var stats_btn := Button.new()
+	stats_btn.text = "📊  Estadísticas"
+	stats_btn.custom_minimum_size = Vector2(0, 44)
+	UIKit.style_button(stats_btn, UIKit.COLOR_ACCENT_3)
+	stats_btn.pressed.connect(func() -> void: get_tree().change_scene_to_file("res://core/scenes/stats.tscn"))
+	vbox.add_child(stats_btn)
+
 	var category_bar := HBoxContainer.new()
 	category_bar.alignment = BoxContainer.ALIGNMENT_CENTER
 	category_bar.add_theme_constant_override("separation", 12)
