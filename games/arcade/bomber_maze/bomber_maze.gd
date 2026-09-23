@@ -8,7 +8,7 @@ extends Control
 const GAME_ID := "bomber_maze"
 const GRID_W := 13
 const GRID_H := 13
-const CELL := 44.0
+const CELL := 50.0
 const MOVE_INTERVAL := 0.14
 const BOMB_FUSE := 2.0
 const BLAST_RADIUS := 2
@@ -39,10 +39,13 @@ var level: int = 1
 var state: String = "playing"
 
 var play_area: Control
-var player_view: GamePiece
+var player_view: EntitySprite
 var score_label: Label
 var lives_label: Label
+var level_label: Label
 var status_label: Label
+var bomb_btn: Button
+var anim_time: float = 0.0
 
 
 func _ready() -> void:
@@ -59,30 +62,43 @@ func _build_ui() -> void:
 
 	var margin := MarginContainer.new()
 	for side: String in ["margin_left", "margin_right", "margin_top", "margin_bottom"]:
-		margin.add_theme_constant_override(side, 20)
+		margin.add_theme_constant_override(side, 14)
 	scroll.add_child(margin)
 
 	var vbox := VBoxContainer.new()
 	vbox.alignment = BoxContainer.ALIGNMENT_CENTER
-	vbox.add_theme_constant_override("separation", 8)
+	vbox.add_theme_constant_override("separation", 10)
 	margin.add_child(vbox)
 
 	UIKit.build_toolbar(vbox, self, "Laberinto de Bombas", HELP_TEXT)
 
+	# --- HUD: barra delgada con icono de puntos, corazones de vida y nivel ---
+	var hud_panel := PanelContainer.new()
+	hud_panel.add_theme_stylebox_override("panel", UIKit.stylebox(UIKit.COLOR_PANEL, UIKit.COLOR_ACCENT_3, 12, 2))
+	vbox.add_child(hud_panel)
+
+	var hud_margin := MarginContainer.new()
+	for side: String in ["margin_left", "margin_right", "margin_top", "margin_bottom"]:
+		hud_margin.add_theme_constant_override(side, 8)
+	hud_panel.add_child(hud_margin)
+
 	var hud := HBoxContainer.new()
 	hud.alignment = BoxContainer.ALIGNMENT_CENTER
-	hud.add_theme_constant_override("separation", 24)
-	vbox.add_child(hud)
-	score_label = UIKit.title_label("Puntos: 0", 14, UIKit.COLOR_TEXT)
+	hud.add_theme_constant_override("separation", 26)
+	hud_margin.add_child(hud)
+	score_label = UIKit.title_label("⭐ 0", 16, UIKit.COLOR_TEXT)
 	hud.add_child(score_label)
-	lives_label = UIKit.title_label("Vidas: 3", 14, UIKit.COLOR_ACCENT)
+	lives_label = UIKit.title_label("❤❤❤", 16, UIKit.COLOR_ACCENT)
 	hud.add_child(lives_label)
+	level_label = UIKit.title_label("Nivel 1/%d" % MAX_LEVEL, 16, UIKit.COLOR_ACCENT_2)
+	hud.add_child(level_label)
 
-	status_label = UIKit.title_label("Nivel 1", 14, UIKit.COLOR_TEXT_DIM)
+	status_label = UIKit.title_label("", 15, UIKit.COLOR_TEXT_DIM)
 	vbox.add_child(status_label)
 
+	# --- Laberinto: ocupa la mayor parte posible del ancho de pantalla ---
 	var play_panel := PanelContainer.new()
-	play_panel.add_theme_stylebox_override("panel", UIKit.stylebox(UIKit.COLOR_PANEL, UIKit.COLOR_ACCENT_3, 10, 2))
+	play_panel.add_theme_stylebox_override("panel", UIKit.stylebox(UIKit.COLOR_PANEL, UIKit.COLOR_ACCENT_3, 14, 3))
 	vbox.add_child(play_panel)
 
 	play_area = Control.new()
@@ -102,15 +118,27 @@ func _build_ui() -> void:
 			row.append(cell)
 		cell_views.append(row)
 
-	player_view = GamePiece.new()
+	player_view = EntitySprite.new()
 	player_view.size = Vector2(CELL * 0.8, CELL * 0.8)
 	player_view.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	player_view.set_piece(UIKit.COLOR_ACCENT_3)
+	player_view.setup("bomber", UIKit.COLOR_ACCENT_3, UIKit.COLOR_ACCENT_2)
 	play_area.add_child(player_view)
+
+	# --- Controles: cluster de movimiento (izquierda) + botón de bomba
+	# prominente (derecha), pensado para pulgares en modo retrato.
+	var controls_row := HBoxContainer.new()
+	controls_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	controls_row.add_theme_constant_override("separation", 40)
+	vbox.add_child(controls_row)
+
+	var dpad_box := VBoxContainer.new()
+	dpad_box.alignment = BoxContainer.ALIGNMENT_CENTER
+	dpad_box.add_theme_constant_override("separation", 8)
+	controls_row.add_child(dpad_box)
 
 	var dpad_row1 := HBoxContainer.new()
 	dpad_row1.alignment = BoxContainer.ALIGNMENT_CENTER
-	vbox.add_child(dpad_row1)
+	dpad_box.add_child(dpad_row1)
 	var up_btn := _make_dir_button("▲")
 	up_btn.button_down.connect(func() -> void: _set_dir(Vector2i(0, -1)))
 	up_btn.button_up.connect(func() -> void: _clear_dir(Vector2i(0, -1)))
@@ -118,15 +146,12 @@ func _build_ui() -> void:
 
 	var dpad_row2 := HBoxContainer.new()
 	dpad_row2.alignment = BoxContainer.ALIGNMENT_CENTER
-	dpad_row2.add_theme_constant_override("separation", 40)
-	vbox.add_child(dpad_row2)
+	dpad_row2.add_theme_constant_override("separation", 80)
+	dpad_box.add_child(dpad_row2)
 	var left_btn := _make_dir_button("◀")
 	left_btn.button_down.connect(func() -> void: _set_dir(Vector2i(-1, 0)))
 	left_btn.button_up.connect(func() -> void: _clear_dir(Vector2i(-1, 0)))
 	dpad_row2.add_child(left_btn)
-	var bomb_btn := _make_dir_button("💣")
-	bomb_btn.pressed.connect(_on_bomb_pressed)
-	dpad_row2.add_child(bomb_btn)
 	var right_btn := _make_dir_button("▶")
 	right_btn.button_down.connect(func() -> void: _set_dir(Vector2i(1, 0)))
 	right_btn.button_up.connect(func() -> void: _clear_dir(Vector2i(1, 0)))
@@ -134,11 +159,19 @@ func _build_ui() -> void:
 
 	var dpad_row3 := HBoxContainer.new()
 	dpad_row3.alignment = BoxContainer.ALIGNMENT_CENTER
-	vbox.add_child(dpad_row3)
+	dpad_box.add_child(dpad_row3)
 	var down_btn := _make_dir_button("▼")
 	down_btn.button_down.connect(func() -> void: _set_dir(Vector2i(0, 1)))
 	down_btn.button_up.connect(func() -> void: _clear_dir(Vector2i(0, 1)))
 	dpad_row3.add_child(down_btn)
+
+	bomb_btn = Button.new()
+	bomb_btn.text = "💣"
+	bomb_btn.custom_minimum_size = Vector2(100, 100)
+	bomb_btn.add_theme_font_size_override("font_size", 36)
+	UIKit.style_button(bomb_btn, UIKit.COLOR_DANGER, 50)
+	bomb_btn.pressed.connect(_on_bomb_pressed)
+	controls_row.add_child(bomb_btn)
 
 	var restart_btn := Button.new()
 	restart_btn.text = "↻  Nueva partida"
@@ -151,10 +184,15 @@ func _build_ui() -> void:
 func _make_dir_button(label: String) -> Button:
 	var btn := Button.new()
 	btn.text = label
-	btn.custom_minimum_size = Vector2(64, 56)
-	btn.add_theme_font_size_override("font_size", 20)
+	btn.custom_minimum_size = Vector2(74, 64)
+	btn.add_theme_font_size_override("font_size", 22)
 	UIKit.style_button(btn, UIKit.COLOR_ACCENT_2)
 	return btn
+
+
+func _cell_pos(cell: Vector2i, node_size: Vector2) -> Vector2:
+	## Centra un nodo de tamaño `node_size` dentro de la celda de grilla dada.
+	return Vector2(cell.x * CELL + (CELL - node_size.x) / 2.0, cell.y * CELL + (CELL - node_size.y) / 2.0)
 
 
 func _set_dir(d: Vector2i) -> void:
@@ -205,12 +243,15 @@ func _setup_level() -> void:
 
 	player_cell = Vector2i(1, 1)
 	current_dir = Vector2i.ZERO
-	player_view.position = Vector2(player_cell.x * CELL, player_cell.y * CELL)
+	player_view.position = _cell_pos(player_cell, player_view.size)
+	player_view.flipped = false
 
 	for b: Dictionary in bombs:
 		b["view"].queue_free()
 	bombs.clear()
 	bomb_active = false
+	if bomb_btn:
+		bomb_btn.disabled = false
 
 	for e: Dictionary in enemies:
 		e["view"].queue_free()
@@ -221,16 +262,17 @@ func _setup_level() -> void:
 	var interval: float = max(0.16, 0.34 - level * 0.016)
 	for i in range(count):
 		var c: Vector2i = spawn_corners[i % spawn_corners.size()]
-		var view := GamePiece.new()
-		view.size = Vector2(CELL * 0.75, CELL * 0.75)
-		view.position = Vector2(c.x * CELL, c.y * CELL)
+		var view := EntitySprite.new()
+		view.size = Vector2(CELL * 0.82, CELL * 0.82)
+		view.position = _cell_pos(c, view.size)
 		view.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		view.set_piece(UIKit.COLOR_DANGER)
+		view.setup("critter", UIKit.COLOR_DANGER, UIKit.COLOR_TEXT, i)
 		play_area.add_child(view)
-		enemies.append({"pos": c, "state": "alive", "timer": 0.0, "interval": interval, "view": view})
+		enemies.append({"pos": c, "state": "alive", "timer": 0.0, "interval": interval, "view": view, "phase_offset": randf()})
 
 	_redraw_grid()
-	status_label.text = "Nivel %d / %d" % [level, MAX_LEVEL]
+	status_label.text = ""
+	status_label.remove_theme_color_override("font_color")
 	_update_hud()
 
 
@@ -243,19 +285,33 @@ func _redraw_grid() -> void:
 func _style_cell(y: int, x: int) -> void:
 	var view: Panel = cell_views[y][x]
 	var color: Color
+	var border: Color = Color(0, 0, 0, 0)
+	var radius: int = 0
+	var border_w: int = 0
 	match cell_type[y][x]:
 		"wall":
-			color = UIKit.COLOR_BG
+			color = UIKit.COLOR_BG.darkened(0.08)
+			border = UIKit.COLOR_BG_LIGHT
+			radius = 2
+			border_w = 2
 		"soft":
 			color = UIKit.COLOR_ACCENT_2.lerp(UIKit.COLOR_BG, 0.25)
+			border = UIKit.COLOR_ACCENT_2.darkened(0.35)
+			radius = 6
+			border_w = 2
 		_:
-			color = UIKit.COLOR_BG_LIGHT
-	view.add_theme_stylebox_override("panel", UIKit.stylebox(color, Color(0, 0, 0, 0), 2))
+			# piso a cuadros para que la zona caminable se lea como tablero
+			color = UIKit.COLOR_BG_LIGHT if (x + y) % 2 == 0 else UIKit.COLOR_BG_LIGHT.darkened(0.05)
+	view.add_theme_stylebox_override("panel", UIKit.stylebox(color, border, radius, border_w))
 
 
 func _update_hud() -> void:
-	score_label.text = "Puntos: %d" % score
-	lives_label.text = "Vidas: %d" % lives
+	score_label.text = "⭐ %d" % score
+	var hearts := ""
+	for i in range(3):
+		hearts += "❤" if i < lives else "♡"
+	lives_label.text = hearts
+	level_label.text = "Nivel %d/%d" % [level, MAX_LEVEL]
 
 
 func _is_walkable(p: Vector2i) -> bool:
@@ -270,18 +326,26 @@ func _on_bomb_pressed() -> void:
 	if cell_type[player_cell.y][player_cell.x] != "empty":
 		return
 	bomb_active = true
-	var view := GamePiece.new()
-	view.size = Vector2(CELL * 0.7, CELL * 0.7)
-	view.position = Vector2(player_cell.x * CELL + CELL * 0.15, player_cell.y * CELL + CELL * 0.15)
+	if bomb_btn:
+		bomb_btn.disabled = true
+	var view := EntitySprite.new()
+	view.size = Vector2(CELL * 0.72, CELL * 0.72)
+	view.position = _cell_pos(player_cell, view.size)
 	view.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	view.set_piece(UIKit.COLOR_TEXT)
+	view.setup("bomb", UIKit.COLOR_TEXT, UIKit.COLOR_TEXT)
 	play_area.add_child(view)
-	bombs.append({"cell": player_cell, "timer": BOMB_FUSE, "view": view})
+	bombs.append({"cell": player_cell, "timer": BOMB_FUSE, "view": view, "anim_t": 0.0})
 
 
 func _process(delta: float) -> void:
 	if state != "playing":
 		return
+
+	anim_time += delta
+	player_view.set_phase(anim_time * 0.6)
+	for e: Dictionary in enemies:
+		if e["state"] == "alive":
+			e["view"].set_phase(anim_time * 0.9 + e["phase_offset"])
 
 	move_timer += delta
 	if move_timer >= MOVE_INTERVAL:
@@ -300,11 +364,13 @@ func _process(delta: float) -> void:
 
 
 func _try_move_player() -> void:
+	if current_dir.x != 0:
+		player_view.flipped = current_dir.x < 0
 	var next: Vector2i = player_cell + current_dir
 	if not _is_walkable(next):
 		return
 	player_cell = next
-	player_view.position = Vector2(next.x * CELL, next.y * CELL)
+	player_view.position = _cell_pos(next, player_view.size)
 
 
 func _update_enemy(e: Dictionary, delta: float) -> void:
@@ -319,24 +385,48 @@ func _update_enemy(e: Dictionary, delta: float) -> void:
 			options.append(n)
 	if not options.is_empty():
 		e["pos"] = options[randi() % options.size()]
-	e["view"].position = Vector2(e["pos"].x * CELL, e["pos"].y * CELL)
+	e["view"].position = _cell_pos(e["pos"], e["view"].size)
 
 
 func _update_bombs(delta: float) -> void:
 	for i in range(bombs.size() - 1, -1, -1):
 		var b: Dictionary = bombs[i]
 		b["timer"] -= delta
+		# El fusible acelera visualmente el pulso/parpadeo de la bomba a medida
+		# que se acerca la detonación (0 = recién colocada, 1 = por explotar).
+		var progress: float = clamp(1.0 - (b["timer"] / BOMB_FUSE), 0.0, 1.0)
+		var rate: float = lerp(1.2, 4.5, progress)
+		b["anim_t"] += delta * rate
+		b["view"].set_phase(b["anim_t"])
 		if b["timer"] <= 0.0:
 			_explode_bomb(b)
 			bombs.remove_at(i)
 			bomb_active = false
+			if bomb_btn:
+				bomb_btn.disabled = false
 
 
 func _explode_bomb(b: Dictionary) -> void:
 	var affected: Array = _apply_explosion(b["cell"])
 	b["view"].queue_free()
-	for p: Vector2i in affected:
+	_spawn_blast(affected)
+
+
+func _spawn_blast(cells: Array) -> void:
+	## Efecto visual de la explosión: un EntitySprite "blast" por celda afectada,
+	## animado de phase 0 -> 1 con un Tween y luego liberado. Puramente visual;
+	## la lógica de daño ya se resolvió en _apply_explosion().
+	for p: Vector2i in cells:
 		UIKit.pulse(cell_views[p.y][p.x])
+		var blast := EntitySprite.new()
+		blast.size = Vector2(CELL * 0.98, CELL * 0.98)
+		blast.position = _cell_pos(p, blast.size)
+		blast.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		blast.setup("blast", UIKit.COLOR_ACCENT_3, UIKit.COLOR_ACCENT_3)
+		play_area.add_child(blast)
+		var tween := blast.create_tween()
+		tween.tween_method(blast.set_phase, 0.0, 1.0, 0.25)
+		tween.tween_callback(blast.queue_free)
 
 
 func _apply_explosion(cell: Vector2i) -> Array:
@@ -396,7 +486,7 @@ func _lose_life() -> void:
 		return
 	player_cell = Vector2i(1, 1)
 	current_dir = Vector2i.ZERO
-	player_view.position = Vector2(player_cell.x * CELL, player_cell.y * CELL)
+	player_view.position = _cell_pos(player_cell, player_view.size)
 
 
 func _advance_level() -> void:

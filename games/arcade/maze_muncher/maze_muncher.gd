@@ -10,11 +10,22 @@ const ROOMS_W := 9
 const ROOMS_H := 11
 const MAZE_W := ROOMS_W * 2 + 1
 const MAZE_H := ROOMS_H * 2 + 1
-const CELL := 30.0
+const CELL := 36.0
+const PIECE_SIZE := CELL * 0.92
 const MOVE_INTERVAL := 0.11
 const VULNERABLE_DURATION := 6.0
 const MAX_LEVEL := 10
 const DIRS := [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]
+
+const GHOST_COLORS := [
+	Color(0.937, 0.325, 0.314),  # rojo (estilo Blinky)
+	Color(1.0, 0.478, 0.706),    # rosa (estilo Pinky)
+	Color(0.306, 0.804, 0.769),  # cian (estilo Inky)
+	Color(1.0, 0.596, 0.208),    # naranja (estilo Clyde)
+	Color(0.678, 0.478, 0.925),  # morado (5to fantasma, niveles altos)
+]
+const GHOST_SCARED_COLOR := Color(0.235, 0.318, 0.831)
+const GHOST_SCARED_FLASH := Color(0.94, 0.95, 1.0)
 
 const HELP_TEXT := "Muévete por el laberinto con las flechas y come todos los puntos.
 
@@ -30,8 +41,10 @@ var cell_views: Array = []
 
 var player_cell: Vector2i = Vector2i.ZERO
 var current_dir: Vector2i = Vector2i.ZERO
+var facing_dir: Vector2i = Vector2i(1, 0)
 var move_timer: float = 0.0
 var vulnerable_timer: float = 0.0
+var anim_time: float = 0.0
 
 var ghosts: Array = []
 
@@ -41,7 +54,8 @@ var level: int = 1
 var state: String = "playing"
 
 var play_area: Control
-var player_view: GamePiece
+var dot_layer: Control
+var player_view: EntitySprite
 var score_label: Label
 var lives_label: Label
 var status_label: Label
@@ -55,37 +69,59 @@ func _ready() -> void:
 func _build_ui() -> void:
 	UIKit.apply_background(self)
 
-	var scroll := ScrollContainer.new()
-	scroll.set_anchors_preset(Control.PRESET_FULL_RECT)
-	add_child(scroll)
+	var root_vbox := VBoxContainer.new()
+	root_vbox.set_anchors_preset(Control.PRESET_FULL_RECT)
+	root_vbox.add_theme_constant_override("separation", 6)
+	add_child(root_vbox)
 
-	var margin := MarginContainer.new()
-	for side: String in ["margin_left", "margin_right", "margin_top", "margin_bottom"]:
-		margin.add_theme_constant_override(side, 20)
-	scroll.add_child(margin)
+	# --- Barra superior compacta: volver/ayuda + puntos/vidas/nivel/reinicio -
+	var header_margin := MarginContainer.new()
+	header_margin.add_theme_constant_override("margin_left", 12)
+	header_margin.add_theme_constant_override("margin_right", 12)
+	header_margin.add_theme_constant_override("margin_top", 10)
+	header_margin.add_theme_constant_override("margin_bottom", 0)
+	root_vbox.add_child(header_margin)
 
-	var vbox := VBoxContainer.new()
-	vbox.alignment = BoxContainer.ALIGNMENT_CENTER
-	vbox.add_theme_constant_override("separation", 8)
-	margin.add_child(vbox)
+	var header_vbox := VBoxContainer.new()
+	header_vbox.add_theme_constant_override("separation", 6)
+	header_margin.add_child(header_vbox)
 
-	UIKit.build_toolbar(vbox, self, "Caza en el Laberinto", HELP_TEXT)
+	UIKit.build_toolbar(header_vbox, self, "Caza en el Laberinto", HELP_TEXT)
 
-	var hud := HBoxContainer.new()
-	hud.alignment = BoxContainer.ALIGNMENT_CENTER
-	hud.add_theme_constant_override("separation", 24)
-	vbox.add_child(hud)
-	score_label = UIKit.title_label("Puntos: 0", 14, UIKit.COLOR_TEXT)
-	hud.add_child(score_label)
-	lives_label = UIKit.title_label("Vidas: 3", 14, UIKit.COLOR_ACCENT)
-	hud.add_child(lives_label)
+	var stats_bar := PanelContainer.new()
+	stats_bar.add_theme_stylebox_override("panel", UIKit.stylebox(UIKit.COLOR_PANEL, UIKit.COLOR_ACCENT_3, 12, 1))
+	header_vbox.add_child(stats_bar)
 
-	status_label = UIKit.title_label("Nivel 1", 14, UIKit.COLOR_TEXT_DIM)
-	vbox.add_child(status_label)
+	var stats_row := HBoxContainer.new()
+	stats_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	stats_row.add_theme_constant_override("separation", 18)
+	stats_bar.add_child(stats_row)
+
+	score_label = UIKit.title_label("Puntos: 0", 13, UIKit.COLOR_TEXT)
+	stats_row.add_child(score_label)
+
+	lives_label = UIKit.title_label("♥♥♥", 15, UIKit.COLOR_DANGER)
+	stats_row.add_child(lives_label)
+
+	status_label = UIKit.title_label("Nivel 1 / %d" % MAX_LEVEL, 13, UIKit.COLOR_ACCENT_3)
+	stats_row.add_child(status_label)
+
+	var restart_btn := Button.new()
+	restart_btn.text = "↻"
+	restart_btn.custom_minimum_size = Vector2(32, 32)
+	restart_btn.add_theme_font_size_override("font_size", 16)
+	UIKit.style_button(restart_btn, UIKit.COLOR_TEXT_DIM, 9)
+	restart_btn.pressed.connect(_new_game)
+	stats_row.add_child(restart_btn)
+
+	# --- Laberinto: ocupa todo el espacio vertical disponible -----------
+	var maze_center := CenterContainer.new()
+	maze_center.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	root_vbox.add_child(maze_center)
 
 	var play_panel := PanelContainer.new()
 	play_panel.add_theme_stylebox_override("panel", UIKit.stylebox(UIKit.COLOR_PANEL, UIKit.COLOR_ACCENT_3, 10, 2))
-	vbox.add_child(play_panel)
+	maze_center.add_child(play_panel)
 
 	play_area = Control.new()
 	play_area.custom_minimum_size = Vector2(MAZE_W * CELL, MAZE_H * CELL)
@@ -104,60 +140,121 @@ func _build_ui() -> void:
 			row.append(cell)
 		cell_views.append(row)
 
-	player_view = GamePiece.new()
-	player_view.size = Vector2(CELL * 0.85, CELL * 0.85)
+	# Capa única para dibujar todos los puntos/bolitas grandes: mucho más
+	# barato que un EntitySprite por punto (puede haber cientos por nivel).
+	dot_layer = Control.new()
+	dot_layer.size = Vector2(MAZE_W * CELL, MAZE_H * CELL)
+	dot_layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	dot_layer.draw.connect(_draw_dots)
+	play_area.add_child(dot_layer)
+
+	player_view = EntitySprite.new()
+	player_view.size = Vector2(PIECE_SIZE, PIECE_SIZE)
 	player_view.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	player_view.set_piece(UIKit.COLOR_ACCENT_3)
+	player_view.setup("muncher", UIKit.COLOR_ACCENT_3, UIKit.COLOR_ACCENT_3.lightened(0.5))
 	play_area.add_child(player_view)
 
-	var dpad_row1 := HBoxContainer.new()
-	dpad_row1.alignment = BoxContainer.ALIGNMENT_CENTER
-	vbox.add_child(dpad_row1)
+	# --- Controles: cruceta grande con feedback táctil -------------------
+	var controls_margin := MarginContainer.new()
+	controls_margin.add_theme_constant_override("margin_left", 12)
+	controls_margin.add_theme_constant_override("margin_right", 12)
+	controls_margin.add_theme_constant_override("margin_top", 8)
+	controls_margin.add_theme_constant_override("margin_bottom", 12)
+	root_vbox.add_child(controls_margin)
+
+	var controls_vbox := VBoxContainer.new()
+	controls_vbox.alignment = BoxContainer.ALIGNMENT_CENTER
+	controls_vbox.add_theme_constant_override("separation", 6)
+	controls_margin.add_child(controls_vbox)
+
+	var dpad_center := CenterContainer.new()
+	controls_vbox.add_child(dpad_center)
+
+	var dpad := GridContainer.new()
+	dpad.columns = 3
+	dpad.add_theme_constant_override("h_separation", 8)
+	dpad.add_theme_constant_override("v_separation", 8)
+	dpad_center.add_child(dpad)
+
+	dpad.add_child(_make_dpad_spacer())
 	var up_btn := _make_dir_button("▲")
 	up_btn.button_down.connect(func() -> void: _set_dir(Vector2i(0, -1)))
 	up_btn.button_up.connect(func() -> void: _clear_dir(Vector2i(0, -1)))
-	dpad_row1.add_child(up_btn)
+	dpad.add_child(up_btn)
+	dpad.add_child(_make_dpad_spacer())
 
-	var dpad_row2 := HBoxContainer.new()
-	dpad_row2.alignment = BoxContainer.ALIGNMENT_CENTER
-	dpad_row2.add_theme_constant_override("separation", 60)
-	vbox.add_child(dpad_row2)
 	var left_btn := _make_dir_button("◀")
 	left_btn.button_down.connect(func() -> void: _set_dir(Vector2i(-1, 0)))
 	left_btn.button_up.connect(func() -> void: _clear_dir(Vector2i(-1, 0)))
-	dpad_row2.add_child(left_btn)
+	dpad.add_child(left_btn)
+	dpad.add_child(_make_dpad_spacer())
 	var right_btn := _make_dir_button("▶")
 	right_btn.button_down.connect(func() -> void: _set_dir(Vector2i(1, 0)))
 	right_btn.button_up.connect(func() -> void: _clear_dir(Vector2i(1, 0)))
-	dpad_row2.add_child(right_btn)
+	dpad.add_child(right_btn)
 
-	var dpad_row3 := HBoxContainer.new()
-	dpad_row3.alignment = BoxContainer.ALIGNMENT_CENTER
-	vbox.add_child(dpad_row3)
+	dpad.add_child(_make_dpad_spacer())
 	var down_btn := _make_dir_button("▼")
 	down_btn.button_down.connect(func() -> void: _set_dir(Vector2i(0, 1)))
 	down_btn.button_up.connect(func() -> void: _clear_dir(Vector2i(0, 1)))
-	dpad_row3.add_child(down_btn)
-
-	var restart_btn := Button.new()
-	restart_btn.text = "↻  Nueva partida"
-	restart_btn.custom_minimum_size = Vector2(200, 48)
-	UIKit.style_button(restart_btn, UIKit.COLOR_ACCENT_3)
-	restart_btn.pressed.connect(_new_game)
-	vbox.add_child(restart_btn)
+	dpad.add_child(down_btn)
+	dpad.add_child(_make_dpad_spacer())
 
 
 func _make_dir_button(label: String) -> Button:
 	var btn := Button.new()
 	btn.text = label
-	btn.custom_minimum_size = Vector2(64, 56)
-	btn.add_theme_font_size_override("font_size", 20)
-	UIKit.style_button(btn, UIKit.COLOR_ACCENT_2)
+	btn.custom_minimum_size = Vector2(72, 72)
+	btn.add_theme_font_size_override("font_size", 26)
+	UIKit.style_button(btn, UIKit.COLOR_ACCENT_2, 16)
+	btn.button_down.connect(func() -> void: _press_scale(btn, true))
+	btn.button_up.connect(func() -> void: _press_scale(btn, false))
 	return btn
+
+
+func _make_dpad_spacer() -> Control:
+	var c := Control.new()
+	c.custom_minimum_size = Vector2(72, 72)
+	c.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	return c
+
+
+func _press_scale(btn: Button, pressed_down: bool) -> void:
+	btn.pivot_offset = btn.size / 2.0
+	var tween := btn.create_tween()
+	tween.tween_property(btn, "scale", Vector2(0.88, 0.88) if pressed_down else Vector2.ONE, 0.08)
+
+
+func _piece_pos(cell: Vector2i) -> Vector2:
+	var offset: float = (CELL - PIECE_SIZE) / 2.0
+	return Vector2(cell.x * CELL + offset, cell.y * CELL + offset)
+
+
+func _dir_to_facing_deg(d: Vector2i) -> float:
+	if d == Vector2i.ZERO:
+		return player_view.facing_deg
+	return rad_to_deg(atan2(float(d.y), float(d.x)))
+
+
+func _draw_dots() -> void:
+	var t: float = Time.get_ticks_msec() / 1000.0
+	var pulse: float = 0.85 + 0.15 * sin(t * 4.0)
+	for y in range(MAZE_H):
+		for x in range(MAZE_W):
+			var c: Vector2 = Vector2(x * CELL + CELL / 2.0, y * CELL + CELL / 2.0)
+			if has_power[y][x]:
+				var r: float = CELL * 0.24 * pulse
+				dot_layer.draw_circle(c, r * 1.7, Color(UIKit.COLOR_ACCENT_3.r, UIKit.COLOR_ACCENT_3.g, UIKit.COLOR_ACCENT_3.b, 0.16))
+				dot_layer.draw_circle(c, r, UIKit.COLOR_ACCENT_3)
+				dot_layer.draw_circle(c - Vector2(r * 0.3, r * 0.3), r * 0.35, Color(1, 1, 1, 0.55))
+			elif has_dot[y][x]:
+				dot_layer.draw_circle(c, CELL * 0.085, Color(0.95, 0.87, 0.65, 0.9))
 
 
 func _set_dir(d: Vector2i) -> void:
 	current_dir = d
+	facing_dir = d
+	player_view.set_facing(_dir_to_facing_deg(d))
 
 
 func _clear_dir(d: Vector2i) -> void:
@@ -239,6 +336,9 @@ func _setup_level() -> void:
 	has_dot[player_cell.y][player_cell.x] = false
 	current_dir = Vector2i.ZERO
 	vulnerable_timer = 0.0
+	player_view.position = _piece_pos(player_cell)
+	player_view.set_facing(_dir_to_facing_deg(facing_dir))
+	player_view.set_phase(0.0)
 
 	var power_spots: Array = [
 		Vector2i(ROOMS_W - 1, 0), Vector2i(0, ROOMS_H - 1),
@@ -262,16 +362,22 @@ func _setup_level() -> void:
 	for i in range(ghost_count):
 		var spawn: Vector2i = _room_to_grid(spawn_rooms[i % spawn_rooms.size()])
 		has_dot[spawn.y][spawn.x] = false
-		var view := GamePiece.new()
-		view.size = Vector2(CELL * 0.85, CELL * 0.85)
-		view.position = Vector2(spawn.x * CELL, spawn.y * CELL)
+		var base_color: Color = GHOST_COLORS[i % GHOST_COLORS.size()]
+		var view := EntitySprite.new()
+		view.size = Vector2(PIECE_SIZE, PIECE_SIZE)
+		view.position = _piece_pos(spawn)
 		view.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		view.set_piece(UIKit.COLOR_DANGER)
+		view.setup("ghost", base_color, base_color.lightened(0.35), i)
 		play_area.add_child(view)
-		ghosts.append({"pos": spawn, "spawn": spawn, "last_pos": Vector2i(-99, -99), "view": view, "interval": ghost_interval, "timer": 0.0})
+		ghosts.append({
+			"pos": spawn, "spawn": spawn, "last_pos": Vector2i(-99, -99),
+			"view": view, "interval": ghost_interval, "timer": 0.0,
+			"base_color": base_color, "phase_offset": float(i) * 0.27,
+		})
 
 	status_label.text = "Nivel %d / %d" % [level, MAX_LEVEL]
 	_redraw_maze()
+	dot_layer.queue_redraw()
 	_update_hud()
 
 
@@ -282,22 +388,16 @@ func _redraw_maze() -> void:
 
 
 func _style_cell(y: int, x: int) -> void:
+	# El piso ya no cambia de color al comer: los puntos se dibujan aparte
+	# en dot_layer, así el suelo del laberinto se ve limpio y estable.
 	var view: Panel = cell_views[y][x]
-	var color: Color
-	if walls[y][x]:
-		color = UIKit.COLOR_BG
-	elif has_power[y][x]:
-		color = UIKit.COLOR_ACCENT_3
-	elif has_dot[y][x]:
-		color = UIKit.COLOR_BG_LIGHT.lightened(0.18)
-	else:
-		color = UIKit.COLOR_BG_LIGHT
-	view.add_theme_stylebox_override("panel", UIKit.stylebox(color, Color(0, 0, 0, 0), 2))
+	var color: Color = UIKit.COLOR_BG if walls[y][x] else UIKit.COLOR_BG_LIGHT
+	view.add_theme_stylebox_override("panel", UIKit.stylebox(color, Color(0, 0, 0, 0), 3))
 
 
 func _update_hud() -> void:
 	score_label.text = "Puntos: %d" % score
-	lives_label.text = "Vidas: %d" % lives
+	lives_label.text = "♥".repeat(max(lives, 0)) + "♡".repeat(max(3 - lives, 0))
 
 
 func _is_open(p: Vector2i) -> bool:
@@ -310,13 +410,34 @@ func _process(delta: float) -> void:
 	if state != "playing":
 		return
 
+	anim_time += delta
+	for g: Dictionary in ghosts:
+		g["view"].set_phase(anim_time * 0.6 + float(g["phase_offset"]))
+
 	if vulnerable_timer > 0.0:
 		vulnerable_timer -= delta
+		var flashing: bool = vulnerable_timer < 1.5 and int(vulnerable_timer * 6.0) % 2 == 0
+		for g: Dictionary in ghosts:
+			if flashing:
+				g["view"].color = GHOST_SCARED_FLASH
+				g["view"].color2 = GHOST_SCARED_COLOR
+			else:
+				g["view"].color = GHOST_SCARED_COLOR
+				g["view"].color2 = GHOST_SCARED_FLASH
+			g["view"].queue_redraw()
 		if vulnerable_timer <= 0.0:
 			for g: Dictionary in ghosts:
-				g["view"].set_piece(UIKit.COLOR_DANGER)
+				var base_color: Color = g["base_color"]
+				g["view"].color = base_color
+				g["view"].color2 = base_color.lightened(0.35)
+				g["view"].queue_redraw()
 
+	# La boca "mastica" siguiendo el progreso del paso actual: un mordisco
+	# rápido por celda mientras se mueve, cerrada cuando está quieto.
 	move_timer += delta
+	player_view.set_phase(move_timer / MOVE_INTERVAL if current_dir != Vector2i.ZERO else 0.0)
+	dot_layer.queue_redraw()
+
 	if move_timer >= MOVE_INTERVAL:
 		move_timer = 0.0
 		if current_dir != Vector2i.ZERO:
@@ -335,20 +456,20 @@ func _try_move_player() -> void:
 	if not _is_open(next):
 		return
 	player_cell = next
-	player_view.position = Vector2(next.x * CELL, next.y * CELL)
+	player_view.position = _piece_pos(next)
 
 	if has_dot[next.y][next.x]:
 		has_dot[next.y][next.x] = false
 		score += 10
-		_style_cell(next.y, next.x)
 		_update_hud()
 	if has_power[next.y][next.x]:
 		has_power[next.y][next.x] = false
 		score += 50
 		vulnerable_timer = VULNERABLE_DURATION
 		for g: Dictionary in ghosts:
-			g["view"].set_piece(UIKit.COLOR_ACCENT_2)
-		_style_cell(next.y, next.x)
+			g["view"].color = GHOST_SCARED_COLOR
+			g["view"].color2 = GHOST_SCARED_FLASH
+			g["view"].queue_redraw()
 		_update_hud()
 
 	if _all_dots_eaten():
@@ -391,7 +512,7 @@ func _move_ghost(g: Dictionary) -> void:
 
 	g["last_pos"] = g["pos"]
 	g["pos"] = chosen
-	g["view"].position = Vector2(chosen.x * CELL, chosen.y * CELL)
+	g["view"].position = _piece_pos(chosen)
 
 
 func _check_ghost_collision() -> void:
@@ -401,7 +522,7 @@ func _check_ghost_collision() -> void:
 				score += 200
 				_update_hud()
 				g["pos"] = g["spawn"]
-				g["view"].position = Vector2(g["spawn"].x * CELL, g["spawn"].y * CELL)
+				g["view"].position = _piece_pos(g["spawn"])
 			else:
 				_lose_life()
 			return
@@ -420,10 +541,11 @@ func _lose_life() -> void:
 	_update_hud()
 	current_dir = Vector2i.ZERO
 	player_cell = _room_to_grid(Vector2i(0, 0))
-	player_view.position = Vector2(player_cell.x * CELL, player_cell.y * CELL)
+	player_view.position = _piece_pos(player_cell)
+	player_view.set_phase(0.0)
 	for g: Dictionary in ghosts:
 		g["pos"] = g["spawn"]
-		g["view"].position = Vector2(g["spawn"].x * CELL, g["spawn"].y * CELL)
+		g["view"].position = _piece_pos(g["spawn"])
 
 	if lives <= 0:
 		state = "game_over"

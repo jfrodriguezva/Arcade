@@ -12,6 +12,12 @@ const JUMP_VELOCITY := -620.0
 const MOVE_SPEED := 220.0
 const PLAYER_SIZE := Vector2(28, 40)
 const ENEMY_SIZE := Vector2(26, 32)
+# Tamaños visuales (EntitySprite): más redondeados/grandes que la caja de
+# colisión de arriba. El sprite se ancla por los "pies" al fondo de la caja
+# de colisión para que el salto/aterrizaje no cambien de sensación.
+const PLAYER_VIEW_SIZE := Vector2(46, 46)
+const ENEMY_VIEW_SIZE := Vector2(40, 40)
+const PROJECTILE_VIEW_SIZE := Vector2(16, 16)
 const SNOW_SPEED := 480.0
 const SNOW_COOLDOWN := 0.35
 const FREEZE_HITS := 3
@@ -44,6 +50,7 @@ var facing: int = 1
 var moving_left: bool = false
 var moving_right: bool = false
 var shoot_cooldown: float = 0.0
+var player_phase: float = 0.0
 
 var enemies: Array = []
 var projectiles: Array = []
@@ -54,7 +61,7 @@ var level: int = 1
 var state: String = "playing"
 
 var play_area: Control
-var player_view: GamePiece
+var player_view: EntitySprite
 var score_label: Label
 var lives_label: Label
 var status_label: Label
@@ -74,26 +81,38 @@ func _build_ui() -> void:
 
 	var margin := MarginContainer.new()
 	for side: String in ["margin_left", "margin_right", "margin_top", "margin_bottom"]:
-		margin.add_theme_constant_override(side, 20)
+		margin.add_theme_constant_override(side, 12)
 	scroll.add_child(margin)
 
 	var vbox := VBoxContainer.new()
 	vbox.alignment = BoxContainer.ALIGNMENT_CENTER
-	vbox.add_theme_constant_override("separation", 8)
+	vbox.add_theme_constant_override("separation", 6)
 	margin.add_child(vbox)
 
 	UIKit.build_toolbar(vbox, self, "Guerra de Nieve", HELP_TEXT)
 
+	# Barra de estado delgada: puntos + vidas en una sola línea con panel.
+	var stat_panel := PanelContainer.new()
+	stat_panel.add_theme_stylebox_override("panel", UIKit.stylebox(UIKit.COLOR_PANEL, UIKit.COLOR_ACCENT_3, 10, 1))
+	vbox.add_child(stat_panel)
+
+	var stat_margin := MarginContainer.new()
+	stat_margin.add_theme_constant_override("margin_left", 16)
+	stat_margin.add_theme_constant_override("margin_right", 16)
+	stat_margin.add_theme_constant_override("margin_top", 5)
+	stat_margin.add_theme_constant_override("margin_bottom", 5)
+	stat_panel.add_child(stat_margin)
+
 	var hud := HBoxContainer.new()
 	hud.alignment = BoxContainer.ALIGNMENT_CENTER
-	hud.add_theme_constant_override("separation", 24)
-	vbox.add_child(hud)
-	score_label = UIKit.title_label("Puntos: 0", 15, UIKit.COLOR_TEXT)
+	hud.add_theme_constant_override("separation", 26)
+	stat_margin.add_child(hud)
+	score_label = UIKit.title_label("Puntos: 0", 14, UIKit.COLOR_TEXT)
 	hud.add_child(score_label)
-	lives_label = UIKit.title_label("Vidas: 3", 15, UIKit.COLOR_ACCENT)
+	lives_label = UIKit.title_label("❤ 3", 14, UIKit.COLOR_ACCENT)
 	hud.add_child(lives_label)
 
-	status_label = UIKit.title_label("Nivel 1", 14, UIKit.COLOR_TEXT_DIM)
+	status_label = UIKit.title_label("Nivel 1", 13, UIKit.COLOR_TEXT_DIM)
 	vbox.add_child(status_label)
 
 	var play_panel := PanelContainer.new()
@@ -106,6 +125,15 @@ func _build_ui() -> void:
 	play_area.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	play_panel.add_child(play_area)
 
+	# Cielo nevado de fondo: degradado sutil para que la escena no se sienta
+	# vacía detrás de las plataformas, sin tocar la física ni el layout.
+	var sky := ColorRect.new()
+	sky.color = UIKit.COLOR_BG.lightened(0.04)
+	sky.size = Vector2(PLAY_W, PLAY_H)
+	sky.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	play_area.add_child(sky)
+	play_area.move_child(sky, 0)
+
 	for p: Rect2 in PLATFORMS:
 		var plat_view := Panel.new()
 		plat_view.position = p.position
@@ -114,32 +142,49 @@ func _build_ui() -> void:
 		plat_view.add_theme_stylebox_override("panel", UIKit.stylebox(UIKit.COLOR_ACCENT_2, Color(0, 0, 0, 0), 4))
 		play_area.add_child(plat_view)
 
-	player_view = GamePiece.new()
-	player_view.size = PLAYER_SIZE
+	player_view = EntitySprite.new()
+	player_view.size = PLAYER_VIEW_SIZE
 	player_view.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	player_view.set_piece(UIKit.COLOR_ACCENT_3)
+	player_view.setup("snow_player", UIKit.COLOR_ACCENT_3, UIKit.COLOR_ACCENT)
 	play_area.add_child(player_view)
 
+	# Controles agrupados como un juego móvil real: cruz de movimiento a la
+	# izquierda (salto arriba, izquierda/derecha abajo) y botón de acción
+	# (bola de nieve) grande a la derecha.
 	var controls := HBoxContainer.new()
 	controls.alignment = BoxContainer.ALIGNMENT_CENTER
-	controls.add_theme_constant_override("separation", 10)
+	controls.add_theme_constant_override("separation", 30)
 	vbox.add_child(controls)
 
-	var left_btn := _make_control_button("◀")
+	var move_cluster := VBoxContainer.new()
+	move_cluster.alignment = BoxContainer.ALIGNMENT_CENTER
+	move_cluster.add_theme_constant_override("separation", 8)
+	controls.add_child(move_cluster)
+
+	var jump_row := HBoxContainer.new()
+	jump_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	move_cluster.add_child(jump_row)
+	var jump_btn := _make_control_button("⬆", Vector2(84, 60), UIKit.COLOR_ACCENT_2)
+	jump_btn.pressed.connect(_on_jump_pressed)
+	jump_row.add_child(jump_btn)
+
+	var move_row := HBoxContainer.new()
+	move_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	move_row.add_theme_constant_override("separation", 10)
+	move_cluster.add_child(move_row)
+
+	var left_btn := _make_control_button("◀", Vector2(80, 72), UIKit.COLOR_ACCENT_2)
 	left_btn.button_down.connect(func() -> void: moving_left = true)
 	left_btn.button_up.connect(func() -> void: moving_left = false)
-	controls.add_child(left_btn)
+	move_row.add_child(left_btn)
 
-	var jump_btn := _make_control_button("⬆")
-	jump_btn.pressed.connect(_on_jump_pressed)
-	controls.add_child(jump_btn)
-
-	var right_btn := _make_control_button("▶")
+	var right_btn := _make_control_button("▶", Vector2(80, 72), UIKit.COLOR_ACCENT_2)
 	right_btn.button_down.connect(func() -> void: moving_right = true)
 	right_btn.button_up.connect(func() -> void: moving_right = false)
-	controls.add_child(right_btn)
+	move_row.add_child(right_btn)
 
-	var shoot_btn := _make_control_button("❄")
+	var shoot_btn := _make_control_button("❄", Vector2(96, 96), UIKit.COLOR_ACCENT)
+	shoot_btn.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	shoot_btn.pressed.connect(_on_shoot_pressed)
 	controls.add_child(shoot_btn)
 
@@ -151,12 +196,12 @@ func _build_ui() -> void:
 	vbox.add_child(restart_btn)
 
 
-func _make_control_button(label: String) -> Button:
+func _make_control_button(label: String, min_size: Vector2 = Vector2(76, 68), accent: Color = UIKit.COLOR_ACCENT_2) -> Button:
 	var btn := Button.new()
 	btn.text = label
-	btn.custom_minimum_size = Vector2(76, 68)
-	btn.add_theme_font_size_override("font_size", 24)
-	UIKit.style_button(btn, UIKit.COLOR_ACCENT_2)
+	btn.custom_minimum_size = min_size
+	btn.add_theme_font_size_override("font_size", 26)
+	UIKit.style_button(btn, accent)
 	return btn
 
 
@@ -169,8 +214,8 @@ func _new_game() -> void:
 
 
 func _setup_level() -> void:
-	_respawn_player()
 	facing = 1
+	_respawn_player()
 
 	for p: Dictionary in projectiles:
 		p["view"].queue_free()
@@ -185,16 +230,16 @@ func _setup_level() -> void:
 	for i in range(count):
 		var plat: Rect2 = PLATFORMS[1 + (randi() % (PLATFORMS.size() - 1))]
 		var pos := Vector2(plat.position.x + randf() * max(1.0, plat.size.x - ENEMY_SIZE.x), plat.position.y - ENEMY_SIZE.y)
-		var view := GamePiece.new()
-		view.size = ENEMY_SIZE
-		view.position = pos
+		var view := EntitySprite.new()
+		view.size = ENEMY_VIEW_SIZE
+		view.position = _enemy_view_pos(pos)
 		view.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		view.set_piece(UIKit.COLOR_DANGER)
+		view.setup("snow_enemy", UIKit.COLOR_DANGER)
 		play_area.add_child(view)
 		enemies.append({
 			"pos": pos, "platform": plat, "dir": (1 if randi() % 2 == 0 else -1),
 			"speed": speed, "state": "walking", "hits": 0, "vel": Vector2.ZERO,
-			"start_x": 0.0, "view": view,
+			"start_x": 0.0, "view": view, "phase": fmod(float(i) * 0.31, 1.0),
 		})
 
 	status_label.text = "Nivel %d / %d" % [level, MAX_LEVEL]
@@ -203,7 +248,25 @@ func _setup_level() -> void:
 
 func _update_hud() -> void:
 	score_label.text = "Puntos: %d" % score
-	lives_label.text = "Vidas: %d" % lives
+	lives_label.text = "❤ %d" % lives
+
+
+func _sync_player_view() -> void:
+	# Ancla el sprite (más grande/redondo que la caja de colisión) por los
+	# pies al fondo de PLAYER_SIZE, para que el salto/aterrizaje no cambien.
+	player_view.position = Vector2(
+		player_pos.x + PLAYER_SIZE.x / 2.0 - PLAYER_VIEW_SIZE.x / 2.0,
+		player_pos.y + PLAYER_SIZE.y - PLAYER_VIEW_SIZE.y
+	)
+	player_view.set_facing(0.0, facing < 0)
+	player_view.set_phase(player_phase)
+
+
+func _enemy_view_pos(pos: Vector2) -> Vector2:
+	return Vector2(
+		pos.x + ENEMY_SIZE.x / 2.0 - ENEMY_VIEW_SIZE.x / 2.0,
+		pos.y + ENEMY_SIZE.y - ENEMY_VIEW_SIZE.y
+	)
 
 
 func _on_jump_pressed() -> void:
@@ -218,11 +281,11 @@ func _on_shoot_pressed() -> void:
 		return
 	shoot_cooldown = SNOW_COOLDOWN
 	var pos: Vector2 = player_pos + Vector2(PLAYER_SIZE.x / 2.0 - 6.0, PLAYER_SIZE.y / 2.0 - 6.0)
-	var view := GamePiece.new()
-	view.size = Vector2(12, 12)
-	view.position = pos
+	var view := EntitySprite.new()
+	view.size = PROJECTILE_VIEW_SIZE
+	view.position = pos - Vector2(2.0, 2.0)
 	view.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	view.set_piece(UIKit.COLOR_TEXT)
+	view.setup("snowball", Color.WHITE)
 	play_area.add_child(view)
 	projectiles.append({"pos": pos, "vel": Vector2(facing * SNOW_SPEED, 0), "view": view})
 
@@ -253,6 +316,9 @@ func _update_player(delta: float) -> void:
 	else:
 		player_vel.x = 0.0
 
+	if player_vel.x != 0.0:
+		player_phase = fmod(player_phase + delta * 2.6, 1.0)
+
 	var prev_bottom: float = player_pos.y + PLAYER_SIZE.y
 	player_pos += player_vel * delta
 	player_pos.x = clamp(player_pos.x, 0.0, PLAY_W - PLAYER_SIZE.x)
@@ -268,7 +334,7 @@ func _update_player(delta: float) -> void:
 				on_ground = true
 				break
 
-	player_view.position = player_pos
+	_sync_player_view()
 
 	if player_pos.y > PLAY_H:
 		_lose_life()
@@ -287,7 +353,7 @@ func _kick_snowball(e: Dictionary, dir: float) -> void:
 	e["state"] = "rolling"
 	e["vel"] = Vector2(SNOWBALL_SPEED * (1.0 if dir >= 0.0 else -1.0), 0.0)
 	e["start_x"] = e["pos"].x
-	e["view"].set_piece(UIKit.COLOR_TEXT)
+	e["view"].setup("snowball", Color.WHITE)
 
 
 func _update_enemies(delta: float) -> void:
@@ -308,12 +374,15 @@ func _update_walking_enemy(e: Dictionary, delta: float) -> void:
 	elif e["pos"].x + ENEMY_SIZE.x > plat.position.x + plat.size.x:
 		e["pos"].x = plat.position.x + plat.size.x - ENEMY_SIZE.x
 		e["dir"] = -1
-	e["view"].position = e["pos"]
+	e["phase"] = fmod(float(e["phase"]) + delta * 3.0, 1.0)
+	e["view"].position = _enemy_view_pos(e["pos"])
+	e["view"].set_facing(0.0, e["dir"] < 0)
+	e["view"].set_phase(e["phase"])
 
 
 func _update_rolling_enemy(e: Dictionary, delta: float) -> void:
 	e["pos"].x += e["vel"].x * delta
-	e["view"].position = e["pos"]
+	e["view"].position = _enemy_view_pos(e["pos"])
 
 	if e["pos"].x < 0.0 or e["pos"].x + ENEMY_SIZE.x > PLAY_W or abs(e["pos"].x - e["start_x"]) > SNOWBALL_MAX_DIST:
 		_remove_enemy(e)
@@ -338,7 +407,7 @@ func _update_projectiles(delta: float) -> void:
 	for i in range(projectiles.size() - 1, -1, -1):
 		var p: Dictionary = projectiles[i]
 		p["pos"] += p["vel"] * delta
-		p["view"].position = p["pos"]
+		p["view"].position = p["pos"] - Vector2(2.0, 2.0)
 
 		if p["pos"].x < 0.0 or p["pos"].x > PLAY_W:
 			p["view"].queue_free()
@@ -354,7 +423,7 @@ func _update_projectiles(delta: float) -> void:
 				e["hits"] += 1
 				if e["hits"] >= FREEZE_HITS:
 					e["state"] = "frozen"
-					e["view"].set_piece(UIKit.COLOR_ACCENT_2)
+					e["view"].setup("snow_enemy", UIKit.COLOR_ACCENT_2)
 				hit = true
 				break
 		if hit:
@@ -387,7 +456,8 @@ func _respawn_player() -> void:
 	on_ground = true
 	moving_left = false
 	moving_right = false
-	player_view.position = player_pos
+	player_phase = 0.0
+	_sync_player_view()
 
 
 func _advance_level() -> void:

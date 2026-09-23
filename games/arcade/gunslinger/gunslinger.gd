@@ -19,6 +19,14 @@ const RANGED_STOP_DIST := 220.0
 const MAX_ON_SCREEN := 4
 const MAX_LEVEL := 10
 
+const PLAYER_BODY_COLOR := Color(0.27, 0.38, 0.52)    # camisa vaquera azul denim
+const PLAYER_HAT_COLOR := Color(0.80, 0.63, 0.36)     # sombrero tostado
+const BANDIT_MELEE_COLOR := Color(0.52, 0.17, 0.15)   # forajido cuerpo a cuerpo, rojo polvoriento
+const BANDIT_RANGED_COLOR := Color(0.30, 0.40, 0.37)  # forajido a distancia, verde apagado
+const BANDIT_COLOR2 := Color(0.16, 0.16, 0.18)
+const BULLET_COLOR := Color(1.0, 0.86, 0.46)
+const HIT_FLASH_DURATION := 0.18
+
 const HELP_TEXT := "Muévete con ◀ ▶ (también apuntas hacia donde te mueves) y dispara con 🔫.
 
 Los bandidos entran por los lados: los que se acercan directo te quitan una vida si te tocan (dispárales antes). Los que se quedan a distancia disparan hacia ti — muévete para esquivar sus balas.
@@ -30,6 +38,7 @@ var facing: int = 1
 var moving_left: bool = false
 var moving_right: bool = false
 var shoot_cooldown: float = 0.0
+var player_phase: float = 0.0
 
 var enemies: Array = []
 var bullets: Array = []
@@ -48,7 +57,7 @@ var level: int = 1
 var state: String = "playing"
 
 var play_area: Control
-var player_view: GamePiece
+var player_view: EntitySprite
 var score_label: Label
 var lives_label: Label
 var status_label: Label
@@ -79,22 +88,30 @@ func _build_ui() -> void:
 
 	UIKit.build_toolbar(vbox, self, "Pistoleros del Ocaso", HELP_TEXT)
 
+	var hud_panel := PanelContainer.new()
+	hud_panel.add_theme_stylebox_override("panel", UIKit.stylebox(UIKit.COLOR_PANEL, UIKit.COLOR_ACCENT_3, 10, 2))
+	vbox.add_child(hud_panel)
+
+	var hud_margin := MarginContainer.new()
+	for side: String in ["margin_left", "margin_right", "margin_top", "margin_bottom"]:
+		hud_margin.add_theme_constant_override(side, 10)
+	hud_panel.add_child(hud_margin)
+
 	var hud := HBoxContainer.new()
 	hud.alignment = BoxContainer.ALIGNMENT_CENTER
-	hud.add_theme_constant_override("separation", 24)
-	vbox.add_child(hud)
-	score_label = UIKit.title_label("Puntos: 0", 15, UIKit.COLOR_TEXT)
+	hud.add_theme_constant_override("separation", 16)
+	hud_margin.add_child(hud)
+	score_label = UIKit.title_label("🤠 0", 15, UIKit.COLOR_TEXT)
 	hud.add_child(score_label)
-	lives_label = UIKit.title_label("Vidas: 3", 15, UIKit.COLOR_ACCENT)
+	lives_label = UIKit.title_label("❤ 3", 15, UIKit.COLOR_ACCENT)
 	hud.add_child(lives_label)
-
-	status_label = UIKit.title_label("Nivel 1", 14, UIKit.COLOR_TEXT_DIM)
-	vbox.add_child(status_label)
+	status_label = UIKit.title_label("Nivel 1/10", 13, UIKit.COLOR_TEXT_DIM)
+	hud.add_child(status_label)
 	progress_label = UIKit.title_label("", 13, UIKit.COLOR_ACCENT_2)
-	vbox.add_child(progress_label)
+	hud.add_child(progress_label)
 
 	var play_panel := PanelContainer.new()
-	play_panel.add_theme_stylebox_override("panel", UIKit.stylebox(UIKit.COLOR_PANEL, UIKit.COLOR_ACCENT_3, 12, 2))
+	play_panel.add_theme_stylebox_override("panel", UIKit.stylebox(Color(0.08, 0.06, 0.10), UIKit.COLOR_ACCENT_3, 12, 3))
 	vbox.add_child(play_panel)
 
 	play_area = Control.new()
@@ -103,22 +120,34 @@ func _build_ui() -> void:
 	play_area.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	play_panel.add_child(play_area)
 
+	var backdrop := GunslingerBackdrop.new()
+	backdrop.size = Vector2(PLAY_W, GROUND_Y)
+	backdrop.position = Vector2.ZERO
+	play_area.add_child(backdrop)
+
 	var ground := Panel.new()
 	ground.position = Vector2(0, GROUND_Y)
 	ground.size = Vector2(PLAY_W, PLAY_H - GROUND_Y)
 	ground.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	ground.add_theme_stylebox_override("panel", UIKit.stylebox(UIKit.COLOR_ACCENT_2.lerp(UIKit.COLOR_BG, 0.6), Color(0, 0, 0, 0), 0))
+	ground.add_theme_stylebox_override("panel", UIKit.stylebox(Color(0.42, 0.29, 0.19), Color(0, 0, 0, 0), 0))
 	play_area.add_child(ground)
 
-	player_view = GamePiece.new()
+	var ground_edge := Panel.new()
+	ground_edge.position = Vector2(0, GROUND_Y)
+	ground_edge.size = Vector2(PLAY_W, 4)
+	ground_edge.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	ground_edge.add_theme_stylebox_override("panel", UIKit.stylebox(Color(0.64, 0.47, 0.29), Color(0, 0, 0, 0), 0))
+	play_area.add_child(ground_edge)
+
+	player_view = EntitySprite.new()
 	player_view.size = PLAYER_SIZE
 	player_view.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	player_view.set_piece(UIKit.COLOR_ACCENT_3)
+	player_view.setup("cowboy", PLAYER_BODY_COLOR, PLAYER_HAT_COLOR)
 	play_area.add_child(player_view)
 
 	var controls := HBoxContainer.new()
 	controls.alignment = BoxContainer.ALIGNMENT_CENTER
-	controls.add_theme_constant_override("separation", 10)
+	controls.add_theme_constant_override("separation", 14)
 	vbox.add_child(controls)
 
 	var left_btn := _make_control_button("◀")
@@ -126,7 +155,11 @@ func _build_ui() -> void:
 	left_btn.button_up.connect(func() -> void: moving_left = false)
 	controls.add_child(left_btn)
 
-	var shoot_btn := _make_control_button("🔫")
+	var shoot_btn := Button.new()
+	shoot_btn.text = "🔫"
+	shoot_btn.custom_minimum_size = Vector2(104, 76)
+	shoot_btn.add_theme_font_size_override("font_size", 28)
+	UIKit.style_button(shoot_btn, UIKit.COLOR_DANGER)
 	shoot_btn.pressed.connect(_on_shoot_pressed)
 	controls.add_child(shoot_btn)
 
@@ -187,9 +220,9 @@ func _setup_level() -> void:
 
 
 func _update_hud() -> void:
-	score_label.text = "Puntos: %d" % score
-	lives_label.text = "Vidas: %d" % lives
-	progress_label.text = "Bandidos: %d / %d" % [kills, kills_needed]
+	score_label.text = "🤠 %d" % score
+	lives_label.text = "❤ %d" % lives
+	progress_label.text = "🎯 %d / %d" % [kills, kills_needed]
 
 
 func _on_shoot_pressed() -> void:
@@ -197,28 +230,32 @@ func _on_shoot_pressed() -> void:
 		return
 	shoot_cooldown = SHOOT_COOLDOWN
 	var pos := Vector2(player_x + (PLAYER_SIZE.x if facing > 0 else 0.0), GROUND_Y - PLAYER_SIZE.y / 2.0 - 6.0)
-	var view := GamePiece.new()
-	view.size = Vector2(12, 8)
+	var view := EntitySprite.new()
+	view.size = Vector2(10, 18)
 	view.position = pos
 	view.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	view.set_piece(UIKit.COLOR_TEXT)
+	view.setup("bullet", BULLET_COLOR, BULLET_COLOR.lightened(0.5))
+	view.set_facing(90.0 if facing > 0 else -90.0)
 	play_area.add_child(view)
 	bullets.append({"pos": pos, "vel": Vector2(facing * BULLET_SPEED, 0), "view": view})
+	UIKit.pulse(player_view)
 
 
 func _spawn_enemy() -> void:
 	var side: int = 1 if randi() % 2 == 0 else -1
 	var x: float = (PLAY_W - ENEMY_SIZE.x) if side == 1 else 0.0
 	var kind: String = "ranged" if randf() < ranged_chance else "melee"
-	var view := GamePiece.new()
+	var view := EntitySprite.new()
 	view.size = ENEMY_SIZE
 	view.position = Vector2(x, GROUND_Y - ENEMY_SIZE.y)
 	view.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	view.set_piece(UIKit.COLOR_ACCENT_2 if kind == "ranged" else UIKit.COLOR_DANGER)
+	view.setup("bandit", BANDIT_RANGED_COLOR if kind == "ranged" else BANDIT_MELEE_COLOR, BANDIT_COLOR2, enemies.size())
+	view.set_facing(0.0, side > 0)
 	play_area.add_child(view)
 	enemies.append({
 		"x": x, "kind": kind, "state": "alive",
 		"shoot_timer": randf_range(0.6, 1.4), "view": view,
+		"phase": randf(), "flash_timer": 0.0,
 	})
 
 
@@ -262,6 +299,10 @@ func _update_player(delta: float) -> void:
 		facing = 1
 	player_x = clamp(player_x + vx * delta, 0.0, PLAY_W - PLAYER_SIZE.x)
 	player_view.position = Vector2(player_x, GROUND_Y - PLAYER_SIZE.y)
+	player_view.set_facing(0.0, facing < 0)
+	var bob_speed: float = 2.4 if (moving_left or moving_right) else 0.7
+	player_phase = fmod(player_phase + delta * bob_speed, 1.0)
+	player_view.set_phase(player_phase)
 
 
 func _update_enemy(e: Dictionary, delta: float) -> void:
@@ -269,6 +310,9 @@ func _update_enemy(e: Dictionary, delta: float) -> void:
 	var enemy_center: float = e["x"] + ENEMY_SIZE.x / 2.0
 	var dx: float = player_center - enemy_center
 	var dir: float = sign(dx) if abs(dx) > 4.0 else 0.0
+
+	if dir != 0.0:
+		e["view"].set_facing(0.0, dir < 0.0)
 
 	if e["kind"] == "melee":
 		e["x"] += dir * enemy_speed * delta
@@ -284,6 +328,16 @@ func _update_enemy(e: Dictionary, delta: float) -> void:
 			e["shoot_timer"] = randf_range(1.0, 1.8)
 			_spawn_enemy_bullet(e)
 
+	# El "phase" de la vista controla el bob de espera y, para los que
+	# disparan, el destello del cañón justo cuando se dispara la bala.
+	if e["flash_timer"] > 0.0:
+		e["flash_timer"] -= delta
+		e["view"].set_phase(0.6)
+	else:
+		var cycle: float = 1.0 if e["kind"] == "ranged" else 0.5
+		e["phase"] = fmod(e["phase"] + delta * 0.55, cycle)
+		e["view"].set_phase(e["phase"])
+
 	e["view"].position = Vector2(e["x"], GROUND_Y - ENEMY_SIZE.y)
 
 
@@ -293,12 +347,14 @@ func _spawn_enemy_bullet(e: Dictionary) -> void:
 	var dir: float = sign(player_center - enemy_center)
 	if dir == 0.0:
 		dir = 1.0
+	e["flash_timer"] = HIT_FLASH_DURATION
 	var pos := Vector2(enemy_center, GROUND_Y - ENEMY_SIZE.y / 2.0)
-	var view := GamePiece.new()
-	view.size = Vector2(10, 8)
+	var view := EntitySprite.new()
+	view.size = Vector2(9, 16)
 	view.position = pos
 	view.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	view.set_piece(UIKit.COLOR_DANGER)
+	view.setup("bullet", UIKit.COLOR_DANGER, UIKit.COLOR_DANGER.lightened(0.45))
+	view.set_facing(90.0 if dir > 0 else -90.0)
 	play_area.add_child(view)
 	enemy_bullets.append({"pos": pos, "vel": Vector2(dir * ENEMY_BULLET_SPEED, 0), "view": view})
 
@@ -319,6 +375,7 @@ func _update_bullets(delta: float) -> void:
 			if e["state"] != "alive":
 				continue
 			if bullet_rect.intersects(Rect2(e["x"], GROUND_Y - ENEMY_SIZE.y, ENEMY_SIZE.x, ENEMY_SIZE.y)):
+				_spawn_hit_flash(Vector2(e["x"] + ENEMY_SIZE.x / 2.0, GROUND_Y - ENEMY_SIZE.y / 2.0))
 				_remove_enemy(e)
 				score += 100
 				kills += 1
@@ -347,6 +404,21 @@ func _update_enemy_bullets(delta: float) -> void:
 			_lose_life()
 
 
+func _spawn_hit_flash(center: Vector2) -> void:
+	## Destello breve al derribar a un bandido: refuerza el "impacto" del
+	## disparo sin depender de _process (una sola animación con tween).
+	var flash := EntitySprite.new()
+	var fsize: Vector2 = ENEMY_SIZE * 1.4
+	flash.size = fsize
+	flash.position = center - fsize / 2.0
+	flash.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	flash.setup("blast", UIKit.COLOR_ACCENT_3, Color(1, 1, 1))
+	play_area.add_child(flash)
+	var tw := create_tween()
+	tw.tween_method(flash.set_phase, 0.0, 1.0, 0.28)
+	tw.tween_callback(flash.queue_free)
+
+
 func _remove_enemy(e: Dictionary) -> void:
 	e["state"] = "removed"
 	e["view"].visible = false
@@ -355,6 +427,7 @@ func _remove_enemy(e: Dictionary) -> void:
 func _lose_life() -> void:
 	lives -= 1
 	_update_hud()
+	UIKit.pulse(player_view)
 	if lives <= 0:
 		state = "game_over"
 		status_label.text = "Game Over. Puntos: %d" % score

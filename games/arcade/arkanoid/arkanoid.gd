@@ -5,11 +5,12 @@ extends Control
 ## resto de la plataforma.
 
 const GAME_ID := "arkanoid"
-const PLAY_W := 640.0
-const PLAY_H := 880.0
+const PLAY_W := 680.0
+const PLAY_H := 1000.0
 const PADDLE_W := 120.0
 const PADDLE_H := 18.0
 const BALL_SIZE := 16.0
+const BALL_VISUAL_SIZE := BALL_SIZE * 1.18
 const COLS := 8
 const BRICK_GAP := 4.0
 const BRICK_H := 28.0
@@ -35,8 +36,8 @@ var state: String = "ready" # ready | playing | game_over | won
 var bricks: Array = []
 
 var play_area: Control
-var paddle: Panel
-var ball_view: GamePiece
+var paddle: EntitySprite
+var ball_view: EntitySprite
 var score_label: Label
 var lives_label: Label
 var status_label: Label
@@ -55,27 +56,41 @@ func _build_ui() -> void:
 	add_child(scroll)
 
 	var margin := MarginContainer.new()
-	for side: String in ["margin_left", "margin_right", "margin_top", "margin_bottom"]:
-		margin.add_theme_constant_override(side, 20)
+	margin.add_theme_constant_override("margin_left", 10)
+	margin.add_theme_constant_override("margin_right", 10)
+	margin.add_theme_constant_override("margin_top", 8)
+	margin.add_theme_constant_override("margin_bottom", 8)
 	scroll.add_child(margin)
 
 	var vbox := VBoxContainer.new()
 	vbox.alignment = BoxContainer.ALIGNMENT_CENTER
-	vbox.add_theme_constant_override("separation", 8)
+	vbox.add_theme_constant_override("separation", 6)
 	margin.add_child(vbox)
 
 	UIKit.build_toolbar(vbox, self, "Arkanoid", HELP_TEXT)
 
+	# Barra de HUD delgada: puntos, nivel y vidas en una sola fila compacta.
+	var hud_panel := PanelContainer.new()
+	hud_panel.add_theme_stylebox_override("panel", UIKit.stylebox(UIKit.COLOR_PANEL, Color(0, 0, 0, 0), 10))
+	vbox.add_child(hud_panel)
+
+	var hud_margin := MarginContainer.new()
+	hud_margin.add_theme_constant_override("margin_left", 14)
+	hud_margin.add_theme_constant_override("margin_right", 14)
+	hud_margin.add_theme_constant_override("margin_top", 6)
+	hud_margin.add_theme_constant_override("margin_bottom", 6)
+	hud_panel.add_child(hud_margin)
+
 	var hud := HBoxContainer.new()
 	hud.alignment = BoxContainer.ALIGNMENT_CENTER
-	hud.add_theme_constant_override("separation", 30)
-	vbox.add_child(hud)
-	score_label = UIKit.title_label("Puntos: 0", 16, UIKit.COLOR_TEXT)
+	hud.add_theme_constant_override("separation", 24)
+	hud_margin.add_child(hud)
+	score_label = UIKit.title_label("Puntos: 0      Nivel: 1/%d" % MAX_LEVEL, 14, UIKit.COLOR_TEXT)
 	hud.add_child(score_label)
-	lives_label = UIKit.title_label("Vidas: 3", 16, UIKit.COLOR_ACCENT)
+	lives_label = UIKit.title_label("Vidas: 3", 14, UIKit.COLOR_ACCENT)
 	hud.add_child(lives_label)
 
-	status_label = UIKit.title_label("", 15, UIKit.COLOR_TEXT_DIM)
+	status_label = UIKit.title_label("", 13, UIKit.COLOR_TEXT_DIM)
 	vbox.add_child(status_label)
 
 	var play_panel := PanelContainer.new()
@@ -89,23 +104,26 @@ func _build_ui() -> void:
 	play_area.gui_input.connect(_on_play_area_input)
 	play_panel.add_child(play_area)
 
-	paddle = Panel.new()
+	paddle = EntitySprite.new()
 	paddle.size = Vector2(PADDLE_W, PADDLE_H)
 	paddle.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	paddle.add_theme_stylebox_override("panel", UIKit.stylebox(UIKit.COLOR_ACCENT, Color(0, 0, 0, 0), 8))
+	paddle.setup("paddle", UIKit.COLOR_ACCENT_2, UIKit.COLOR_ACCENT_3)
 	play_area.add_child(paddle)
 
-	ball_view = GamePiece.new()
-	ball_view.size = Vector2(BALL_SIZE, BALL_SIZE)
+	ball_view = EntitySprite.new()
+	ball_view.size = Vector2(BALL_VISUAL_SIZE, BALL_VISUAL_SIZE)
 	ball_view.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	ball_view.set_piece(UIKit.COLOR_ACCENT_3)
+	ball_view.setup("ball", UIKit.COLOR_ACCENT_3)
 	play_area.add_child(ball_view)
 
 	var restart_btn := Button.new()
 	restart_btn.text = "↻  Nueva partida"
-	restart_btn.custom_minimum_size = Vector2(200, 48)
+	restart_btn.custom_minimum_size = Vector2(220, 52)
 	UIKit.style_button(restart_btn, UIKit.COLOR_ACCENT_3)
-	restart_btn.pressed.connect(_new_game)
+	restart_btn.pressed.connect(func() -> void:
+		UIKit.pulse(restart_btn)
+		_new_game()
+	)
 	vbox.add_child(restart_btn)
 
 
@@ -117,6 +135,46 @@ func _ball_speed_for_level(lvl: int) -> float:
 	return BASE_BALL_SPEED + SPEED_PER_LEVEL * (lvl - 1)
 
 
+func _row_gradient_color(r: int, rows: int) -> Color:
+	## Degradado de color por fila (de arriba hacia abajo) para que los
+	## ladrillos se sientan "reales" en vez de un color plano repetido.
+	var t: float = float(r) / float(max(rows - 1, 1))
+	if t < 0.5:
+		return UIKit.COLOR_ACCENT_2.lerp(UIKit.COLOR_ACCENT_3, t * 2.0)
+	return UIKit.COLOR_ACCENT_3.lerp(UIKit.COLOR_ACCENT, (t - 0.5) * 2.0)
+
+
+func _style_brick(view: Panel, highlight: ColorRect, base_color: Color, tough: bool, cracked: bool) -> void:
+	## Da a cada ladrillo un aspecto biselado (StyleBoxFlat con borde inferior
+	## oscuro + sombra, más una franja superior clara) en lugar de un panel plano.
+	var c: Color = base_color
+	if cracked:
+		c = base_color.lightened(0.55)
+	elif tough:
+		c = base_color.lerp(Color(0.82, 0.86, 0.92), 0.40)
+
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = c
+	sb.set_corner_radius_all(5)
+	sb.border_width_left = 1
+	sb.border_width_right = 1
+	sb.border_width_top = 1
+	sb.border_width_bottom = 3
+	sb.border_color = c.darkened(0.5)
+	if tough and not cracked:
+		sb.border_width_left = 2
+		sb.border_width_right = 2
+		sb.border_width_top = 2
+		sb.border_color = Color(0.92, 0.95, 1.0, 0.85)
+	sb.shadow_color = Color(0, 0, 0, 0.22)
+	sb.shadow_size = 2
+	sb.anti_aliasing = true
+	view.add_theme_stylebox_override("panel", sb)
+
+	var hl: Color = c.lightened(0.5)
+	highlight.color = Color(hl.r, hl.g, hl.b, 0.55)
+
+
 func _build_bricks() -> void:
 	for b: Dictionary in bricks:
 		b["view"].queue_free()
@@ -125,7 +183,6 @@ func _build_bricks() -> void:
 	var rows: int = _rows_for_level(level)
 	var tough_chance: float = clamp(0.06 * (level - 3), 0.0, 0.35)
 	var brick_w: float = (PLAY_W - BRICK_GAP * (COLS + 1)) / COLS
-	var row_colors: Array = [UIKit.COLOR_ACCENT, UIKit.COLOR_ACCENT_2, UIKit.COLOR_ACCENT_3, UIKit.COLOR_DANGER, UIKit.COLOR_TEXT_DIM]
 
 	for r in range(rows):
 		for c in range(COLS):
@@ -136,12 +193,19 @@ func _build_bricks() -> void:
 			view.position = Vector2(x, y)
 			view.size = Vector2(brick_w, BRICK_H)
 			view.mouse_filter = Control.MOUSE_FILTER_IGNORE
-			var color: Color = row_colors[r % row_colors.size()]
-			view.add_theme_stylebox_override("panel", UIKit.stylebox(color, Color(0, 0, 0, 0), 4))
 			play_area.add_child(view)
+
+			var highlight := ColorRect.new()
+			highlight.position = Vector2(2, 1)
+			highlight.size = Vector2(brick_w - 4.0, 2.0)
+			highlight.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			view.add_child(highlight)
+
+			var color: Color = _row_gradient_color(r, rows)
+			_style_brick(view, highlight, color, tough, false)
 			bricks.append({
-				"rect": Rect2(x, y, brick_w, BRICK_H), "alive": true, "view": view,
-				"hits": 2 if tough else 1, "base_color": color,
+				"rect": Rect2(x, y, brick_w, BRICK_H), "alive": true, "view": view, "highlight": highlight,
+				"hits": 2 if tough else 1, "base_color": color, "tough": tough,
 			})
 
 
@@ -160,11 +224,19 @@ func _update_hud() -> void:
 	lives_label.text = "Vidas: %d" % lives
 
 
+func _sync_ball_view() -> void:
+	## El nodo visual de la bola es un poco más grande que su caja de colisión
+	## (BALL_SIZE) para lucir mejor con el sombreado de EntitySprite; se centra
+	## sobre la posición/caja real que usa la física.
+	var pad: float = (BALL_VISUAL_SIZE - BALL_SIZE) / 2.0
+	ball_view.position = ball_pos - Vector2(pad, pad)
+
+
 func _reset_ball() -> void:
 	paddle.position = Vector2((PLAY_W - PADDLE_W) / 2.0, PLAY_H - 40.0)
 	ball_pos = Vector2(paddle.position.x + PADDLE_W / 2.0 - BALL_SIZE / 2.0, paddle.position.y - BALL_SIZE - 2.0)
 	ball_vel = Vector2.ZERO
-	ball_view.position = ball_pos
+	_sync_ball_view()
 	status_label.text = "Toca el área de juego para lanzar la bola"
 
 
@@ -235,7 +307,7 @@ func _process(delta: float) -> void:
 				score += 10
 			else:
 				score += 5
-				b["view"].add_theme_stylebox_override("panel", UIKit.stylebox(b["base_color"].lightened(0.55), Color(0, 0, 0, 0), 4))
+				_style_brick(b["view"], b["highlight"], b["base_color"], b["tough"], true)
 			_update_hud()
 
 			var overlap_x: float = min(ball_rect.end.x, brick_rect.end.x) - max(ball_rect.position.x, brick_rect.position.x)
@@ -246,7 +318,7 @@ func _process(delta: float) -> void:
 				ball_vel.y = -ball_vel.y
 			break
 
-	ball_view.position = ball_pos
+	_sync_ball_view()
 
 	if ball_pos.y > PLAY_H:
 		_lose_life()

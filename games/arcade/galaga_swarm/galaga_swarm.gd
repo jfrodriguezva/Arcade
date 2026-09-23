@@ -5,11 +5,11 @@ extends Control
 ## para pasar de nivel. 10 niveles.
 
 const GAME_ID := "galaga_swarm"
-const PLAY_W := 640.0
-const PLAY_H := 760.0
-const PLAYER_SIZE := Vector2(34, 28)
+const PLAY_W := 680.0
+const PLAY_H := 880.0
+const PLAYER_SIZE := Vector2(36, 36)
 const PLAYER_SPEED := 260.0
-const PLAYER_Y := 710.0
+const PLAYER_Y := 818.0
 const BULLET_SPEED := 520.0
 const SHOOT_COOLDOWN := 0.26
 const ENEMY_SIZE := Vector2(26, 22)
@@ -22,7 +22,19 @@ const SWAY_AMPLITUDE := 22.0
 const DIVE_SPEED := 250.0
 const ENEMY_BULLET_SPEED := 280.0
 const MAX_LEVEL := 10
-const ROW_COLORS := [UIKit.COLOR_ACCENT, UIKit.COLOR_ACCENT_2, UIKit.COLOR_ACCENT_3, UIKit.COLOR_DANGER, UIKit.COLOR_TEXT_DIM, UIKit.COLOR_TEXT]
+const STAR_COUNT := 34
+# Cada fila de la formación tiene su propia silueta/color: la fila 0 son
+# "sentries" (escolta de élite, escudo giratorio) y el resto son "aliens"
+# insectoides con aleteo animado — así la formación se lee con jerarquía
+# visual en vez de ser fichas idénticas repetidas.
+const ROW_VISUALS := [
+	{"shape": "sentry", "color": UIKit.COLOR_DANGER, "color2": UIKit.COLOR_ACCENT_3},
+	{"shape": "alien", "color": UIKit.COLOR_ACCENT, "color2": UIKit.COLOR_ACCENT_3},
+	{"shape": "alien", "color": UIKit.COLOR_ACCENT_2, "color2": UIKit.COLOR_TEXT},
+	{"shape": "alien", "color": UIKit.COLOR_ACCENT_3, "color2": UIKit.COLOR_ACCENT},
+	{"shape": "alien", "color": UIKit.COLOR_TEXT_DIM, "color2": UIKit.COLOR_ACCENT_2},
+	{"shape": "alien", "color": Color(0.75, 0.30, 0.38), "color2": UIKit.COLOR_TEXT_DIM},
+]
 
 const HELP_TEXT := "Muévete con ◀ ▶ y dispara con 🔫 hacia arriba.
 
@@ -41,6 +53,7 @@ var bullets: Array = []
 var enemy_bullets: Array = []
 var dive_timer: float = 0.0
 var dive_interval: float = 1.6
+var stars: Array = []
 
 var score: int = 0
 var lives: int = 3
@@ -48,7 +61,7 @@ var level: int = 1
 var state: String = "playing"
 
 var play_area: Control
-var player_view: GamePiece
+var player_view: EntitySprite
 var score_label: Label
 var lives_label: Label
 var status_label: Label
@@ -68,27 +81,38 @@ func _build_ui() -> void:
 
 	var margin := MarginContainer.new()
 	for side: String in ["margin_left", "margin_right", "margin_top", "margin_bottom"]:
-		margin.add_theme_constant_override(side, 20)
+		margin.add_theme_constant_override(side, 12)
 	scroll.add_child(margin)
 
 	var vbox := VBoxContainer.new()
 	vbox.alignment = BoxContainer.ALIGNMENT_CENTER
-	vbox.add_theme_constant_override("separation", 8)
+	vbox.add_theme_constant_override("separation", 6)
 	margin.add_child(vbox)
 
 	UIKit.build_toolbar(vbox, self, "Enjambre Estelar", HELP_TEXT)
 
+	# Barra HUD delgada: un panel tipo "tablero de mando" con puntaje,
+	# vidas y nivel en una sola franja compacta, para dejarle todo el
+	# resto de la pantalla al área de juego.
+	var hud_panel := PanelContainer.new()
+	hud_panel.add_theme_stylebox_override("panel", UIKit.stylebox(UIKit.COLOR_PANEL, UIKit.COLOR_ACCENT_2, 10, 2))
+	vbox.add_child(hud_panel)
+
+	var hud_margin := MarginContainer.new()
+	for side: String in ["margin_left", "margin_right", "margin_top", "margin_bottom"]:
+		hud_margin.add_theme_constant_override(side, 6)
+	hud_panel.add_child(hud_margin)
+
 	var hud := HBoxContainer.new()
 	hud.alignment = BoxContainer.ALIGNMENT_CENTER
-	hud.add_theme_constant_override("separation", 24)
-	vbox.add_child(hud)
-	score_label = UIKit.title_label("Puntos: 0", 15, UIKit.COLOR_TEXT)
+	hud.add_theme_constant_override("separation", 22)
+	hud_margin.add_child(hud)
+	score_label = UIKit.title_label("★ 0", 15, UIKit.COLOR_ACCENT_3)
 	hud.add_child(score_label)
-	lives_label = UIKit.title_label("Vidas: 3", 15, UIKit.COLOR_ACCENT)
+	status_label = UIKit.title_label("Nivel 1 / %d" % MAX_LEVEL, 15, UIKit.COLOR_TEXT_DIM)
+	hud.add_child(status_label)
+	lives_label = UIKit.title_label("♥ 3", 15, UIKit.COLOR_ACCENT)
 	hud.add_child(lives_label)
-
-	status_label = UIKit.title_label("Nivel 1", 14, UIKit.COLOR_TEXT_DIM)
-	vbox.add_child(status_label)
 
 	var play_panel := PanelContainer.new()
 	play_panel.add_theme_stylebox_override("panel", UIKit.stylebox(UIKit.COLOR_PANEL, UIKit.COLOR_ACCENT_3, 12, 2))
@@ -100,27 +124,29 @@ func _build_ui() -> void:
 	play_area.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	play_panel.add_child(play_area)
 
-	player_view = GamePiece.new()
+	_build_starfield()
+
+	player_view = EntitySprite.new()
 	player_view.size = PLAYER_SIZE
 	player_view.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	player_view.set_piece(UIKit.COLOR_ACCENT_3)
+	player_view.setup("ship", UIKit.COLOR_ACCENT_2, UIKit.COLOR_ACCENT_3)
 	play_area.add_child(player_view)
 
 	var controls := HBoxContainer.new()
 	controls.alignment = BoxContainer.ALIGNMENT_CENTER
-	controls.add_theme_constant_override("separation", 10)
+	controls.add_theme_constant_override("separation", 12)
 	vbox.add_child(controls)
 
-	var left_btn := _make_control_button("◀")
+	var left_btn := _make_control_button("◀", UIKit.COLOR_ACCENT_2)
 	left_btn.button_down.connect(func() -> void: moving_left = true)
 	left_btn.button_up.connect(func() -> void: moving_left = false)
 	controls.add_child(left_btn)
 
-	var shoot_btn := _make_control_button("🔫")
+	var shoot_btn := _make_control_button("🔫", UIKit.COLOR_ACCENT, Vector2(118, 84))
 	shoot_btn.pressed.connect(_on_shoot_pressed)
 	controls.add_child(shoot_btn)
 
-	var right_btn := _make_control_button("▶")
+	var right_btn := _make_control_button("▶", UIKit.COLOR_ACCENT_2)
 	right_btn.button_down.connect(func() -> void: moving_right = true)
 	right_btn.button_up.connect(func() -> void: moving_right = false)
 	controls.add_child(right_btn)
@@ -133,13 +159,44 @@ func _build_ui() -> void:
 	vbox.add_child(restart_btn)
 
 
-func _make_control_button(label: String) -> Button:
+func _make_control_button(label: String, accent: Color, sz: Vector2 = Vector2(100, 84)) -> Button:
 	var btn := Button.new()
 	btn.text = label
-	btn.custom_minimum_size = Vector2(90, 68)
-	btn.add_theme_font_size_override("font_size", 24)
-	UIKit.style_button(btn, UIKit.COLOR_ACCENT_2)
+	btn.custom_minimum_size = sz
+	btn.add_theme_font_size_override("font_size", 26)
+	UIKit.style_button(btn, accent)
 	return btn
+
+
+func _build_starfield() -> void:
+	## Fondo de estrellas dibujado con puntos diminutos que se desplazan
+	## lentamente hacia abajo — barato de animar y vende la ambientación
+	## espacial mucho mejor que un panel plano.
+	var layer := Control.new()
+	layer.size = Vector2(PLAY_W, PLAY_H)
+	layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	play_area.add_child(layer)
+	for i in STAR_COUNT:
+		var star := ColorRect.new()
+		var sz: float = 1.0 + randf() * 1.6
+		star.size = Vector2(sz, sz)
+		star.position = Vector2(randf() * PLAY_W, randf() * PLAY_H)
+		var b: float = 0.35 + randf() * 0.5
+		star.color = Color(b, b, b + 0.05, 0.5 + randf() * 0.35)
+		star.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		layer.add_child(star)
+		stars.append({"view": star, "speed": 26.0 + randf() * 58.0})
+
+
+func _update_starfield(delta: float) -> void:
+	for st: Dictionary in stars:
+		var v: ColorRect = st["view"]
+		var p: Vector2 = v.position
+		p.y += st["speed"] * delta
+		if p.y > PLAY_H:
+			p.y -= PLAY_H
+			p.x = randf() * PLAY_W
+		v.position = p
 
 
 func _new_game() -> void:
@@ -169,18 +226,20 @@ func _setup_level() -> void:
 	var start_x: float = (PLAY_W - total_width) / 2.0 - ENEMY_SIZE.x / 2.0
 
 	for r in range(rows):
+		var visual: Dictionary = ROW_VISUALS[r % ROW_VISUALS.size()]
 		for c in range(FORMATION_COLS):
 			var bx: float = start_x + c * COL_SPACING
 			var by: float = FORMATION_TOP + r * ROW_SPACING
-			var view := GamePiece.new()
+			var view := EntitySprite.new()
 			view.size = ENEMY_SIZE
 			view.position = Vector2(bx, by)
 			view.mouse_filter = Control.MOUSE_FILTER_IGNORE
-			view.set_piece(ROW_COLORS[r % ROW_COLORS.size()])
+			view.setup(visual["shape"], visual["color"], visual["color2"], r * FORMATION_COLS + c)
 			play_area.add_child(view)
 			enemies.append({
 				"base_x": bx, "base_y": by, "pos": Vector2(bx, by), "state": "formation",
-				"dive_vel": Vector2.ZERO, "phase": randf() * TAU, "has_shot": false, "view": view,
+				"dive_vel": Vector2.ZERO, "phase": randf() * TAU, "wing_seed": randf(),
+				"has_shot": false, "view": view,
 			})
 
 	dive_interval = max(0.5, 1.7 - level * 0.1)
@@ -190,8 +249,8 @@ func _setup_level() -> void:
 
 
 func _update_hud() -> void:
-	score_label.text = "Puntos: %d" % score
-	lives_label.text = "Vidas: %d" % lives
+	score_label.text = "★ %d" % score
+	lives_label.text = "♥ %d" % lives
 
 
 func _on_shoot_pressed() -> void:
@@ -199,16 +258,18 @@ func _on_shoot_pressed() -> void:
 		return
 	shoot_cooldown = SHOOT_COOLDOWN
 	var pos := Vector2(player_x + PLAYER_SIZE.x / 2.0 - 4.0, PLAYER_Y - 10.0)
-	var view := GamePiece.new()
+	var view := EntitySprite.new()
 	view.size = Vector2(8, 14)
 	view.position = pos
 	view.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	view.set_piece(UIKit.COLOR_TEXT)
+	view.setup("bullet", UIKit.COLOR_ACCENT_3, UIKit.COLOR_TEXT)
+	view.set_facing(0.0)
 	play_area.add_child(view)
 	bullets.append({"pos": pos, "vel": Vector2(0, -BULLET_SPEED), "view": view})
 
 
 func _process(delta: float) -> void:
+	_update_starfield(delta)
 	if state != "playing":
 		return
 
@@ -217,6 +278,7 @@ func _process(delta: float) -> void:
 		shoot_cooldown -= delta
 
 	_update_player(delta)
+	player_view.set_phase(fmod(time_acc * 3.0, 1.0))
 
 	dive_timer -= delta
 	if dive_timer <= 0.0:
@@ -224,6 +286,9 @@ func _process(delta: float) -> void:
 		_start_random_dive()
 
 	for e: Dictionary in enemies:
+		if e["state"] == "removed":
+			continue
+		e["view"].set_phase(fmod(time_acc * 1.4 + e["wing_seed"], 1.0))
 		if e["state"] == "formation":
 			e["pos"].x = e["base_x"] + sin(time_acc * SWAY_SPEED + e["phase"]) * SWAY_AMPLITUDE
 			e["pos"].y = e["base_y"]
@@ -271,11 +336,12 @@ func _start_random_dive() -> void:
 
 func _spawn_enemy_bullet(e: Dictionary) -> void:
 	var pos: Vector2 = e["pos"] + Vector2(ENEMY_SIZE.x / 2.0 - 4.0, ENEMY_SIZE.y)
-	var view := GamePiece.new()
+	var view := EntitySprite.new()
 	view.size = Vector2(8, 12)
 	view.position = pos
 	view.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	view.set_piece(UIKit.COLOR_DANGER)
+	view.setup("bullet", UIKit.COLOR_DANGER, UIKit.COLOR_ACCENT_3)
+	view.set_facing(180.0)
 	play_area.add_child(view)
 	enemy_bullets.append({"pos": pos, "vel": Vector2(0, ENEMY_BULLET_SPEED), "view": view})
 

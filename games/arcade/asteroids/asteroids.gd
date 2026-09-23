@@ -6,8 +6,8 @@ extends Control
 ## y más velocidad cada vez.
 
 const GAME_ID := "asteroids"
-const PLAY_W := 640.0
-const PLAY_H := 880.0
+const PLAY_W := 660.0
+const PLAY_H := 940.0
 const SHIP_RADIUS := 13.0
 const ROT_SPEED := 3.4
 const THRUST := 260.0
@@ -21,12 +21,13 @@ const SPEED_PER_LEVEL := 6.0
 
 const TIER_RADIUS := [38.0, 22.0, 12.0]
 const TIER_POINTS := [20, 50, 100]
+const ASTEROID_COLORS := [UIKit.COLOR_TEXT_DIM, UIKit.COLOR_ACCENT_2, UIKit.COLOR_ACCENT_3]
 
 const HELP_TEXT := "Controla tu nave con los botones de abajo:
 
 - ◀ / ▶ giran la nave.
-- 🚀 acelera en la dirección a la que apuntas (la nave tiene inercia, sigue moviéndose aunque sueltes el botón).
-- 🔥 dispara.
+- ▲ acelera en la dirección a la que apuntas (la nave tiene inercia, sigue moviéndose aunque sueltes el botón).
+- ● dispara.
 
 Si sales por un borde de la pantalla, apareces por el lado opuesto. Destruye los asteroides grandes: se dividen en 2 más chicos (y esos en 2 más chicos todavía) hasta desaparecer — entre más chico, más puntos vale.
 
@@ -35,6 +36,7 @@ Chocar con un asteroide te quita una vida. Hay 10 niveles, cada uno con más ast
 var ship_pos: Vector2 = Vector2.ZERO
 var ship_vel: Vector2 = Vector2.ZERO
 var ship_rot: float = 0.0
+var ship_phase: float = 0.0
 var rotating_left: bool = false
 var rotating_right: bool = false
 var thrusting: bool = false
@@ -43,6 +45,7 @@ var invulnerable_time: float = 0.0
 
 var bullets: Array = []
 var asteroids: Array = []
+var _asteroid_seed_counter: int = 0
 
 var score: int = 0
 var lives: int = 3
@@ -50,9 +53,10 @@ var level: int = 1
 var state: String = "playing" # playing | game_over | won
 
 var play_area: Control
-var ship_view: Polygon2D
+var ship_sprite: EntitySprite
 var score_label: Label
 var lives_label: Label
+var level_label: Label
 var status_label: Label
 
 
@@ -70,26 +74,30 @@ func _build_ui() -> void:
 
 	var margin := MarginContainer.new()
 	for side: String in ["margin_left", "margin_right", "margin_top", "margin_bottom"]:
-		margin.add_theme_constant_override(side, 20)
+		margin.add_theme_constant_override(side, 14)
 	scroll.add_child(margin)
 
 	var vbox := VBoxContainer.new()
 	vbox.alignment = BoxContainer.ALIGNMENT_CENTER
-	vbox.add_theme_constant_override("separation", 8)
+	vbox.add_theme_constant_override("separation", 6)
 	margin.add_child(vbox)
 
 	UIKit.build_toolbar(vbox, self, "Asteroids", HELP_TEXT)
 
+	# HUD compacta en una sola franja: puntos / nivel / vidas.
 	var hud := HBoxContainer.new()
 	hud.alignment = BoxContainer.ALIGNMENT_CENTER
-	hud.add_theme_constant_override("separation", 30)
+	hud.add_theme_constant_override("separation", 22)
 	vbox.add_child(hud)
-	score_label = UIKit.title_label("Puntos: 0", 16, UIKit.COLOR_TEXT)
+	score_label = UIKit.title_label("Puntos: 0", 15, UIKit.COLOR_TEXT)
 	hud.add_child(score_label)
-	lives_label = UIKit.title_label("Vidas: 3", 16, UIKit.COLOR_ACCENT)
+	level_label = UIKit.title_label("Nivel 1 / %d" % MAX_LEVEL, 15, UIKit.COLOR_TEXT_DIM)
+	hud.add_child(level_label)
+	lives_label = UIKit.title_label("Vidas: 3", 15, UIKit.COLOR_ACCENT)
 	hud.add_child(lives_label)
 
-	status_label = UIKit.title_label("Nivel 1", 15, UIKit.COLOR_TEXT_DIM)
+	status_label = UIKit.title_label("", 15, UIKit.COLOR_ACCENT_3)
+	status_label.visible = false
 	vbox.add_child(status_label)
 
 	var play_panel := PanelContainer.new()
@@ -102,32 +110,43 @@ func _build_ui() -> void:
 	play_area.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	play_panel.add_child(play_area)
 
-	ship_view = Polygon2D.new()
-	ship_view.polygon = PackedVector2Array([Vector2(0, -16), Vector2(10, 12), Vector2(0, 6), Vector2(-10, 12)])
-	ship_view.color = UIKit.COLOR_ACCENT
-	play_area.add_child(ship_view)
+	# fondo estrellado: le da profundidad de "espacio" al campo de juego.
+	var star_field := StarField.new()
+	star_field.size = Vector2(PLAY_W, PLAY_H)
+	play_area.add_child(star_field)
+	star_field.setup(PLAY_W, PLAY_H)
+
+	ship_sprite = EntitySprite.new()
+	ship_sprite.size = Vector2(34, 46)
+	ship_sprite.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	ship_sprite.setup("ship", UIKit.COLOR_ACCENT, UIKit.COLOR_ACCENT_3)
+	play_area.add_child(ship_sprite)
 
 	var controls := HBoxContainer.new()
 	controls.alignment = BoxContainer.ALIGNMENT_CENTER
-	controls.add_theme_constant_override("separation", 10)
+	controls.add_theme_constant_override("separation", 14)
 	vbox.add_child(controls)
 
-	var left_btn := _make_hold_button("◀")
+	var left_btn := _make_hold_button("◀", UIKit.COLOR_ACCENT_2)
 	left_btn.button_down.connect(func() -> void: rotating_left = true)
 	left_btn.button_up.connect(func() -> void: rotating_left = false)
 	controls.add_child(left_btn)
 
-	var thrust_btn := _make_hold_button("🚀")
-	thrust_btn.button_down.connect(func() -> void: thrusting = true)
-	thrust_btn.button_up.connect(func() -> void: thrusting = false)
-	controls.add_child(thrust_btn)
-
-	var right_btn := _make_hold_button("▶")
+	var right_btn := _make_hold_button("▶", UIKit.COLOR_ACCENT_2)
 	right_btn.button_down.connect(func() -> void: rotating_right = true)
 	right_btn.button_up.connect(func() -> void: rotating_right = false)
 	controls.add_child(right_btn)
 
-	var fire_btn := _make_hold_button("🔥")
+	var spacer := Control.new()
+	spacer.custom_minimum_size = Vector2(20, 1)
+	controls.add_child(spacer)
+
+	var thrust_btn := _make_hold_button("▲", UIKit.COLOR_ACCENT_3)
+	thrust_btn.button_down.connect(func() -> void: thrusting = true)
+	thrust_btn.button_up.connect(func() -> void: thrusting = false)
+	controls.add_child(thrust_btn)
+
+	var fire_btn := _make_hold_button("●", UIKit.COLOR_ACCENT)
 	fire_btn.pressed.connect(_on_fire_pressed)
 	controls.add_child(fire_btn)
 
@@ -139,12 +158,12 @@ func _build_ui() -> void:
 	vbox.add_child(restart_btn)
 
 
-func _make_hold_button(label: String) -> Button:
+func _make_hold_button(label: String, accent: Color = UIKit.COLOR_ACCENT_2) -> Button:
 	var btn := Button.new()
 	btn.text = label
-	btn.custom_minimum_size = Vector2(80, 72)
-	btn.add_theme_font_size_override("font_size", 26)
-	UIKit.style_button(btn, UIKit.COLOR_ACCENT_2)
+	btn.custom_minimum_size = Vector2(92, 88)
+	btn.add_theme_font_size_override("font_size", 32)
+	UIKit.style_button(btn, accent)
 	return btn
 
 
@@ -156,6 +175,7 @@ func _new_game() -> void:
 	for b: Dictionary in bullets:
 		b["view"].queue_free()
 	bullets.clear()
+	status_label.visible = false
 	_reset_ship()
 	_update_hud()
 	_spawn_level()
@@ -185,7 +205,7 @@ func _spawn_level() -> void:
 		var dir: Vector2 = (Vector2(PLAY_W / 2.0, PLAY_H / 2.0) - edge_pos).normalized().rotated(randf_range(-0.6, 0.6))
 		_spawn_asteroid(edge_pos, dir * speed, 0)
 
-	status_label.text = "Nivel %d / %d" % [level, MAX_LEVEL]
+	level_label.text = "Nivel %d / %d" % [level, MAX_LEVEL]
 
 
 func _random_edge_position() -> Vector2:
@@ -199,12 +219,12 @@ func _random_edge_position() -> Vector2:
 
 func _spawn_asteroid(pos: Vector2, vel: Vector2, tier: int) -> void:
 	var radius: float = TIER_RADIUS[tier]
-	var view := GamePiece.new()
+	var view := EntitySprite.new()
 	view.size = Vector2(radius * 2.0, radius * 2.0)
-	view.position = pos - Vector2(radius, radius)
+	view.position = pos - view.size / 2.0
 	view.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var color: Color = UIKit.COLOR_TEXT_DIM if tier == 0 else (UIKit.COLOR_ACCENT_2 if tier == 1 else UIKit.COLOR_ACCENT_3)
-	view.set_piece(color)
+	_asteroid_seed_counter += 1
+	view.setup("asteroid", ASTEROID_COLORS[tier], Color.WHITE, _asteroid_seed_counter)
 	play_area.add_child(view)
 	asteroids.append({"pos": pos, "vel": vel, "tier": tier, "radius": radius, "view": view})
 
@@ -215,11 +235,12 @@ func _on_fire_pressed() -> void:
 	fire_cooldown_left = FIRE_COOLDOWN
 	var dir := Vector2(sin(ship_rot), -cos(ship_rot))
 	var bullet_pos: Vector2 = ship_pos + dir * SHIP_RADIUS
-	var view := GamePiece.new()
-	view.size = Vector2(8, 8)
-	view.position = bullet_pos - Vector2(4, 4)
+	var view := EntitySprite.new()
+	view.size = Vector2(10, 26)
+	view.position = bullet_pos - view.size / 2.0
 	view.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	view.set_piece(UIKit.COLOR_ACCENT_3)
+	view.setup("bullet", UIKit.COLOR_ACCENT_3)
+	view.set_facing(rad_to_deg(ship_rot))
 	play_area.add_child(view)
 	bullets.append({"pos": bullet_pos, "vel": dir * BULLET_SPEED + ship_vel, "life": BULLET_LIFETIME, "view": view})
 
@@ -257,9 +278,11 @@ func _process(delta: float) -> void:
 	ship_vel *= pow(1.0 - FRICTION_PER_SEC, delta)
 	ship_pos = _wrap_pos(ship_pos + ship_vel * delta)
 
-	ship_view.position = ship_pos
-	ship_view.rotation = ship_rot
-	ship_view.visible = invulnerable_time <= 0.0 or int(invulnerable_time * 8.0) % 2 == 0
+	ship_phase += delta * (2.6 if thrusting else 0.5)
+	ship_sprite.position = ship_pos - ship_sprite.size / 2.0
+	ship_sprite.set_facing(rad_to_deg(ship_rot))
+	ship_sprite.set_phase(ship_phase)
+	ship_sprite.visible = invulnerable_time <= 0.0 or int(invulnerable_time * 8.0) % 2 == 0
 
 	for i in range(bullets.size() - 1, -1, -1):
 		var b: Dictionary = bullets[i]
@@ -269,11 +292,11 @@ func _process(delta: float) -> void:
 			b["view"].queue_free()
 			bullets.remove_at(i)
 			continue
-		b["view"].position = b["pos"] - Vector2(4, 4)
+		b["view"].position = b["pos"] - b["view"].size / 2.0
 
 	for a: Dictionary in asteroids:
 		a["pos"] = _wrap_pos(a["pos"] + a["vel"] * delta)
-		a["view"].position = a["pos"] - Vector2(a["radius"], a["radius"])
+		a["view"].position = a["pos"] - a["view"].size / 2.0
 
 	_check_bullet_hits()
 	_check_ship_collision()
@@ -324,6 +347,7 @@ func _lose_life() -> void:
 	if lives <= 0:
 		state = "game_over"
 		status_label.text = "Game Over. Puntos: %d" % score
+		status_label.visible = true
 		_record_result(false)
 		return
 	_reset_ship()
@@ -341,6 +365,7 @@ func _advance_level() -> void:
 func _win() -> void:
 	state = "won"
 	status_label.text = "¡Completaste los %d niveles! Puntos: %d" % [MAX_LEVEL, score]
+	status_label.visible = true
 	_record_result(true)
 
 
@@ -351,3 +376,23 @@ func _record_result(won: bool) -> void:
 	stats[key] = stats.get(key, 0) + 1
 	stats["best_score"] = max(stats.get("best_score", 0), score)
 	SaveManager.set_game_data(GAME_ID, stats)
+
+
+class StarField extends Control:
+	## Campo de estrellas estático de fondo: le da al área de juego una
+	## sensación de espacio profundo en vez de un panel vacío.
+	var stars: Array = []
+
+	func setup(w: float, h: float, count: int = 60) -> void:
+		mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var rng := RandomNumberGenerator.new()
+		rng.seed = 1337
+		stars.clear()
+		for i in count:
+			stars.append(Vector3(rng.randf() * w, rng.randf() * h, rng.randf_range(0.6, 2.0)))
+		queue_redraw()
+
+	func _draw() -> void:
+		for st: Vector3 in stars:
+			var a: float = 0.30 + st.z * 0.28
+			draw_circle(Vector2(st.x, st.y), st.z, Color(1, 1, 1, a))
