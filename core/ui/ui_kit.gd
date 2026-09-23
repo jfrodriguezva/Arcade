@@ -238,3 +238,40 @@ static func animate_dice_buttons(node: Node, buttons: Array, final_values: Array
 	for i in range(buttons.size()):
 		if i < held.size() and not held[i]:
 			buttons[i].text = str(final_values[i])
+
+
+static func show_pass_cover(root: Control, message: String, on_continue: Callable) -> void:
+	## Pantalla de "pasa el dispositivo" para juegos 2 Jugadores con
+	## información privada (tu flota, tu mano, etc). Bloquea la vista
+	## hasta que el siguiente jugador confirme que está listo.
+	var overlay := Control.new()
+	overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
+	overlay.mouse_filter = Control.MOUSE_FILTER_STOP
+	root.add_child(overlay)
+
+	var bg := ColorRect.new()
+	bg.color = COLOR_BG
+	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
+	overlay.add_child(bg)
+
+	var center := CenterContainer.new()
+	center.set_anchors_preset(Control.PRESET_FULL_RECT)
+	overlay.add_child(center)
+
+	var vbox := VBoxContainer.new()
+	vbox.alignment = BoxContainer.ALIGNMENT_CENTER
+	vbox.add_theme_constant_override("separation", 20)
+	center.add_child(vbox)
+
+	vbox.add_child(title_label("🔄", 56, COLOR_ACCENT_3))
+	vbox.add_child(title_label(message, 22, COLOR_TEXT))
+
+	var btn := Button.new()
+	btn.text = "▶  Listo, continuar"
+	btn.custom_minimum_size = Vector2(220, 52)
+	style_button(btn, COLOR_ACCENT_3)
+	btn.pressed.connect(func() -> void:
+		overlay.queue_free()
+		on_continue.call()
+	)
+	vbox.add_child(btn)

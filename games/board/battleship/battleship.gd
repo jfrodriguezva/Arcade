@@ -1,38 +1,43 @@
 extends Control
-## Batalla Naval: tú vs la máquina. Flotas se colocan al azar al iniciar.
-## Tocas la grilla enemiga para disparar; la máquina responde con una IA
-## simple de "caza" (si acierta, prueba las celdas vecinas primero).
+## Batalla Naval: Vs Máquina (flotas al azar, IA de "caza" tras un
+## acierto) o 2 Jugadores en el mismo dispositivo (turnos alternados,
+## con pantalla de "pasa el dispositivo" entre turnos para que nadie
+## vea la flota del otro).
 
 const GAME_ID := "battleship"
 const GRID_SIZE := 8
 const FLEET := [4, 3, 2, 2] # tamaños de barco
 
-const HELP_TEXT := "Tu flota (arriba) se coloca al azar y siempre está visible. La flota enemiga (abajo) está oculta.
+const HELP_TEXT := "Tu flota (arriba) se coloca al azar y siempre está visible para ti. La flota enemiga (abajo) está oculta.
 
 Toca una celda de la grilla enemiga para disparar ahí:
 - 'X' rojo = impacto
 - '·' = agua (fallaste)
 
-Después de cada disparo tuyo, la máquina dispara una vez a tu flota. Si acierta, seguirá probando las celdas vecinas.
+En Vs Máquina, después de cada disparo tuyo la máquina dispara una vez a tu flota (con IA de 'caza' tras un acierto). En 2 Jugadores, los turnos se alternan y verás una pantalla para pasar el dispositivo entre cada uno, así nadie ve la flota del otro.
 
 Gana quien hunda primero las 4 naves del rival (tamaños 4, 3, 2 y 2)."
 
-var player_board: Array = [] # Array[Array[Dictionary{ship:bool, shot:bool}]]
-var enemy_board: Array = []
-var player_cells: Array = [] # Array[Array[Button]]
+var boards: Dictionary = {}
+var ship_cells_left: Dictionary = {}
+var my_cells: Array = []
 var enemy_cells: Array = []
-
-var player_ship_cells_left: int = 0
-var enemy_ship_cells_left: int = 0
+var current_turn: String = "player"
+var mode: String = "pve"
 var game_over: bool = false
 var bot_target_queue: Array = []
-var bot_tried: Array = [] # Array[Vector2i] ya disparadas por el bot
 
 var status_label: Label
+var my_fleet_label: Label
 
 
 func _ready() -> void:
 	_build_ui()
+	UIKit.show_setup_overlay(self, "Batalla Naval", true, false, _on_setup_confirmed)
+
+
+func _on_setup_confirmed(config: Dictionary) -> void:
+	mode = config["mode"]
 	_new_game()
 
 
@@ -60,19 +65,20 @@ func _build_ui() -> void:
 	status_label = UIKit.title_label("", 24, UIKit.COLOR_TEXT)
 	vbox.add_child(status_label)
 
-	vbox.add_child(UIKit.title_label("Tu flota", 18, UIKit.COLOR_ACCENT_2))
-	var player_grid := _build_grid(false)
-	vbox.add_child(_wrap_panel(player_grid, UIKit.COLOR_ACCENT_2))
+	my_fleet_label = UIKit.title_label("Tu flota", 18, UIKit.COLOR_ACCENT_2)
+	vbox.add_child(my_fleet_label)
+	var my_grid := _build_grid(false)
+	vbox.add_child(_wrap_panel(my_grid, UIKit.COLOR_ACCENT_2))
 
 	vbox.add_child(UIKit.title_label("Flota enemiga", 18, UIKit.COLOR_ACCENT))
 	var enemy_grid := _build_grid(true)
 	vbox.add_child(_wrap_panel(enemy_grid, UIKit.COLOR_ACCENT))
 
 	var restart_btn := Button.new()
-	restart_btn.text = "↻  Nueva partida"
-	restart_btn.custom_minimum_size = Vector2(200, 48)
+	restart_btn.text = "↻  Nueva partida / Modo"
+	restart_btn.custom_minimum_size = Vector2(220, 48)
 	UIKit.style_button(restart_btn, UIKit.COLOR_ACCENT_3)
-	restart_btn.pressed.connect(_new_game)
+	restart_btn.pressed.connect(func() -> void: UIKit.show_setup_overlay(self, "Batalla Naval", true, false, _on_setup_confirmed))
 	vbox.add_child(restart_btn)
 
 
@@ -80,7 +86,7 @@ func _wrap_panel(grid: GridContainer, accent: Color) -> PanelContainer:
 	var panel := PanelContainer.new()
 	panel.add_theme_stylebox_override("panel", UIKit.stylebox(UIKit.COLOR_PANEL, accent, 16, 2))
 	var m := MarginContainer.new()
-	for side in ["margin_left", "margin_right", "margin_top", "margin_bottom"]:
+	for side: String in ["margin_left", "margin_right", "margin_top", "margin_bottom"]:
 		m.add_theme_constant_override(side, 10)
 	panel.add_child(m)
 	m.add_child(grid)
@@ -112,21 +118,22 @@ func _build_grid(is_enemy: bool) -> GridContainer:
 	if is_enemy:
 		enemy_cells = cells
 	else:
-		player_cells = cells
+		my_cells = cells
 	return grid
+
+
+func _opponent(owner: String) -> String:
+	return "bot" if owner == "player" else "player"
 
 
 func _new_game() -> void:
 	game_over = false
 	bot_target_queue.clear()
-	bot_tried.clear()
-	player_board = _make_empty_board()
-	enemy_board = _make_empty_board()
-	player_ship_cells_left = _place_fleet(player_board)
-	enemy_ship_cells_left = _place_fleet(enemy_board)
+	current_turn = "player"
+	boards = {"player": _make_empty_board(), "bot": _make_empty_board()}
+	ship_cells_left = {"player": _place_fleet(boards["player"]), "bot": _place_fleet(boards["bot"])}
 	_redraw_all()
-	status_label.text = "Tu turno: dispara en la flota enemiga"
-	status_label.add_theme_color_override("font_color", UIKit.COLOR_TEXT)
+	_update_turn_status()
 
 
 func _make_empty_board() -> Array:
@@ -175,16 +182,29 @@ func _fits(board: Array, coords: Array) -> bool:
 	return true
 
 
+func _update_turn_status() -> void:
+	if mode == "pve":
+		my_fleet_label.text = "Tu flota"
+		status_label.text = "Tu turno: dispara en la flota enemiga" if current_turn == "player" else "Turno de la máquina..."
+		status_label.add_theme_color_override("font_color", UIKit.COLOR_ACCENT if current_turn == "player" else UIKit.COLOR_ACCENT_2)
+	else:
+		var label: String = "Jugador 1 (rosa)" if current_turn == "player" else "Jugador 2 (teal)"
+		my_fleet_label.text = "Flota de %s" % label
+		status_label.text = "Turno: %s - dispara en la flota enemiga" % label
+		status_label.add_theme_color_override("font_color", UIKit.COLOR_ACCENT if current_turn == "player" else UIKit.COLOR_ACCENT_2)
+
+
 func _redraw_all() -> void:
+	var mine: Array = boards[current_turn]
+	var theirs: Array = boards[_opponent(current_turn)]
 	for y in range(GRID_SIZE):
 		for x in range(GRID_SIZE):
-			_redraw_player_cell(x, y)
-			_redraw_enemy_cell(x, y)
+			_style_my_cell(x, y, mine[y][x])
+			_style_enemy_cell(x, y, theirs[y][x])
 
 
-func _redraw_player_cell(x: int, y: int) -> void:
-	var data: Dictionary = player_board[y][x]
-	var cell: Button = player_cells[y][x]
+func _style_my_cell(x: int, y: int, data: Dictionary) -> void:
+	var cell: Button = my_cells[y][x]
 	if data["shot"] and data["ship"]:
 		cell.text = "X"
 		UIKit.style_button(cell, UIKit.COLOR_DANGER, 8)
@@ -197,8 +217,7 @@ func _redraw_player_cell(x: int, y: int) -> void:
 		UIKit.style_button(cell, UIKit.COLOR_BG_LIGHT, 8)
 
 
-func _redraw_enemy_cell(x: int, y: int) -> void:
-	var data: Dictionary = enemy_board[y][x]
+func _style_enemy_cell(x: int, y: int, data: Dictionary) -> void:
 	var cell: Button = enemy_cells[y][x]
 	if data["shot"] and data["ship"]:
 		cell.text = "X"
@@ -209,28 +228,53 @@ func _redraw_enemy_cell(x: int, y: int) -> void:
 		UIKit.style_button(cell, UIKit.COLOR_BG, 8)
 		cell.disabled = true
 	else:
+		cell.text = ""
 		UIKit.style_button(cell, UIKit.COLOR_BG_LIGHT, 8)
-		cell.disabled = false
+		cell.disabled = game_over
 
 
 func _on_enemy_cell_pressed(x: int, y: int) -> void:
 	if game_over:
 		return
-	var data: Dictionary = enemy_board[y][x]
+
+	var attacker: String = current_turn
+	var target_key: String = _opponent(attacker)
+	var data: Dictionary = boards[target_key][y][x]
 	if data["shot"]:
 		return
 
 	data["shot"] = true
 	if data["ship"]:
-		enemy_ship_cells_left -= 1
-	_redraw_enemy_cell(x, y)
+		ship_cells_left[target_key] -= 1
+	_redraw_all()
 	UIKit.pulse(enemy_cells[y][x])
 
-	if enemy_ship_cells_left <= 0:
-		_end_game(true)
+	if ship_cells_left[target_key] <= 0:
+		_end_game(attacker)
 		return
 
-	_bot_turn()
+	_advance_turn(attacker)
+
+
+func _advance_turn(attacker: String) -> void:
+	current_turn = _opponent(attacker)
+
+	if mode == "pve":
+		if current_turn == "bot":
+			_update_turn_status()
+			await get_tree().create_timer(0.5).timeout
+			_bot_turn()
+		else:
+			_update_turn_status()
+		return
+
+	var next_label: String = "Jugador 1 (rosa)" if current_turn == "player" else "Jugador 2 (teal)"
+	UIKit.show_pass_cover(self, "Pásale el dispositivo a %s" % next_label, _on_pass_confirmed)
+
+
+func _on_pass_confirmed() -> void:
+	_redraw_all()
+	_update_turn_status()
 
 
 func _bot_turn() -> void:
@@ -238,33 +282,33 @@ func _bot_turn() -> void:
 	if pos == Vector2i(-1, -1):
 		return
 
-	var data: Dictionary = player_board[pos.y][pos.x]
+	var data: Dictionary = boards["player"][pos.y][pos.x]
 	data["shot"] = true
 	if data["ship"]:
-		player_ship_cells_left -= 1
+		ship_cells_left["player"] -= 1
 		for n: Vector2i in _neighbors(pos):
-			if not player_board[n.y][n.x]["shot"] and not bot_target_queue.has(n):
+			if not boards["player"][n.y][n.x]["shot"] and not bot_target_queue.has(n):
 				bot_target_queue.append(n)
-	_redraw_player_cell(pos.x, pos.y)
+	_redraw_all()
 
-	if player_ship_cells_left <= 0:
-		_end_game(false)
+	if ship_cells_left["player"] <= 0:
+		_end_game("bot")
 		return
 
-	status_label.text = "Tu turno: dispara en la flota enemiga"
-	status_label.add_theme_color_override("font_color", UIKit.COLOR_TEXT)
+	current_turn = "player"
+	_update_turn_status()
 
 
 func _pick_bot_target() -> Vector2i:
 	while not bot_target_queue.is_empty():
 		var pos: Vector2i = bot_target_queue.pop_front()
-		if not player_board[pos.y][pos.x]["shot"]:
+		if not boards["player"][pos.y][pos.x]["shot"]:
 			return pos
 
 	var candidates: Array = []
 	for y in range(GRID_SIZE):
 		for x in range(GRID_SIZE):
-			if not player_board[y][x]["shot"]:
+			if not boards["player"][y][x]["shot"]:
 				candidates.append(Vector2i(x, y))
 	if candidates.is_empty():
 		return Vector2i(-1, -1)
@@ -280,18 +324,25 @@ func _neighbors(pos: Vector2i) -> Array:
 	return result
 
 
-func _end_game(player_won: bool) -> void:
+func _end_game(winner: String) -> void:
 	game_over = true
-	if player_won:
-		status_label.text = "¡Hundiste toda la flota enemiga!"
-		status_label.add_theme_color_override("font_color", UIKit.COLOR_ACCENT_3)
+	if mode == "pve":
+		if winner == "player":
+			status_label.text = "¡Hundiste toda la flota enemiga!"
+			status_label.add_theme_color_override("font_color", UIKit.COLOR_ACCENT_3)
+		else:
+			status_label.text = "La máquina hundió tu flota..."
+			status_label.add_theme_color_override("font_color", UIKit.COLOR_DANGER)
+		_record_result(winner == "player")
 	else:
-		status_label.text = "La máquina hundió tu flota..."
-		status_label.add_theme_color_override("font_color", UIKit.COLOR_DANGER)
+		var label: String = "Jugador 1 (rosa)" if winner == "player" else "Jugador 2 (teal)"
+		status_label.text = "¡%s hundió la flota rival!" % label
+		status_label.add_theme_color_override("font_color", UIKit.COLOR_ACCENT_3)
+		AudioManager.play_win()
+
 	for row: Array in enemy_cells:
 		for cell: Button in row:
 			cell.disabled = true
-	_record_result(player_won)
 
 
 func _record_result(player_won: bool) -> void:
