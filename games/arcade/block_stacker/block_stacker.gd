@@ -34,20 +34,25 @@ const HELP_TEXT := "Las piezas caen solas; acomódalas para completar filas hori
 - 🔄 la rota.
 - ⬇ (mantén presionado) la hace caer más rápido.
 - ⏬ la deja caer al fondo de una vez.
+- ⇄ la guarda para usarla después (una vez por pieza): la primera vez saca la siguiente, luego intercambia.
 
-El contorno tenue debajo de la pieza muestra dónde caerá si usas ⏬. El panel \"Siguiente\" te enseña la próxima pieza con anticipación.
+El contorno tenue debajo de la pieza muestra dónde caerá si usas ⏬. El panel \"Siguiente\" te enseña la próxima pieza con anticipación, y \"Guardada\" la que dejaste en reserva. Las piezas salen en \"bolsas\" de las 7 formas sin repetir, como en el Tetris moderno — nunca hay una sequía larga de una pieza.
 
 Cada línea completa desaparece y suma puntos (más líneas de una vez = más puntos). Cada 10 líneas subes de nivel y la caída se acelera, hasta el nivel 10. Ganas al llegar a 100 líneas; pierdes si las piezas llegan hasta arriba."
 
 var grid: Array = []
 var cell_views: Array = []
 var next_preview_views: Array = []
+var hold_preview_views: Array = []
 
 var piece_type: String = ""
 var piece_rot: int = 0
 var piece_pos: Vector2i = Vector2i.ZERO
 var piece_color: Color = Color.WHITE
 var next_type: String = ""
+var held_type: String = ""
+var can_hold: bool = true
+var bag: Array = []
 
 var fall_timer: float = 0.0
 var fall_interval: float = 1.0
@@ -152,6 +157,34 @@ func _build_ui() -> void:
 			nrow.append(c)
 		next_preview_views.append(nrow)
 
+	var hold_panel := PanelContainer.new()
+	hold_panel.add_theme_stylebox_override("panel", UIKit.stylebox(UIKit.COLOR_PANEL, UIKit.COLOR_ACCENT, 10, 2))
+	side_col.add_child(hold_panel)
+	var hold_margin := MarginContainer.new()
+	for side: String in ["margin_left", "margin_right", "margin_top", "margin_bottom"]:
+		hold_margin.add_theme_constant_override(side, 8)
+	hold_panel.add_child(hold_margin)
+	var hold_vbox := VBoxContainer.new()
+	hold_vbox.alignment = BoxContainer.ALIGNMENT_CENTER
+	hold_vbox.add_theme_constant_override("separation", 6)
+	hold_margin.add_child(hold_vbox)
+	hold_vbox.add_child(UIKit.title_label("GUARDADA", 11, UIKit.COLOR_TEXT_DIM))
+
+	var hold_grid := GridContainer.new()
+	hold_grid.columns = 4
+	hold_grid.add_theme_constant_override("h_separation", 1)
+	hold_grid.add_theme_constant_override("v_separation", 1)
+	hold_vbox.add_child(hold_grid)
+	for y in range(4):
+		var hrow: Array = []
+		for x in range(4):
+			var c := Panel.new()
+			c.custom_minimum_size = Vector2(NEXT_CELL, NEXT_CELL)
+			c.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			hold_grid.add_child(c)
+			hrow.append(c)
+		hold_preview_views.append(hrow)
+
 	status_label = UIKit.title_label("", 14, UIKit.COLOR_TEXT_DIM)
 	vbox.add_child(status_label)
 
@@ -180,6 +213,10 @@ func _build_ui() -> void:
 	hard_btn.pressed.connect(_hard_drop)
 
 	controls_row.add_child(_build_cluster("ACCIÓN", [soft_btn, hard_btn]))
+
+	var hold_btn := _make_control_button("⇄", UIKit.COLOR_TEXT_DIM, Vector2(64, 64), 24)
+	hold_btn.pressed.connect(_on_hold_pressed)
+	controls_row.add_child(_build_cluster("GUARDAR", [hold_btn]))
 
 	var restart_btn := Button.new()
 	restart_btn.text = "↻  Nueva partida"
@@ -290,7 +327,10 @@ func _new_game() -> void:
 	fall_interval = 1.0
 	fall_timer = 0.0
 	state = "playing"
-	next_type = _random_type()
+	bag = []
+	held_type = ""
+	can_hold = true
+	next_type = _draw_from_bag()
 	status_label.text = ""
 	_update_hud()
 	_spawn_piece()
@@ -304,24 +344,39 @@ func _update_hud() -> void:
 
 
 func _update_next_preview() -> void:
-	if next_preview_views.is_empty() or next_type == "":
+	_draw_preview(next_preview_views, next_type)
+	_draw_preview(hold_preview_views, held_type)
+
+
+func _draw_preview(views: Array, type: String) -> void:
+	if views.is_empty():
 		return
 	var filled: Dictionary = {}
-	for cell: Vector2i in BASE_SHAPES[next_type]:
-		filled[cell] = true
-	var color: Color = PIECE_COLORS[next_type]
+	if type != "":
+		for cell: Vector2i in BASE_SHAPES[type]:
+			filled[cell] = true
+	var color: Color = PIECE_COLORS.get(type, Color.WHITE)
 	for y in range(4):
 		for x in range(4):
-			var view: Panel = next_preview_views[y][x]
+			var view: Panel = views[y][x]
 			if filled.has(Vector2i(x, y)):
 				view.add_theme_stylebox_override("panel", UIKit.stylebox(color, color.darkened(0.45), 3, 1))
 			else:
 				view.add_theme_stylebox_override("panel", UIKit.stylebox(Color(0, 0, 0, 0), Color(0, 0, 0, 0), 3))
 
 
-func _random_type() -> String:
-	var keys: Array = BASE_SHAPES.keys()
-	return keys[randi() % keys.size()]
+func _refill_bag() -> void:
+	## Bolsa de 7: cada una de las 7 piezas sale exactamente una vez por
+	## bolsa (barajada), como el Tetris moderno — evita las sequías largas
+	## de una pieza que un random puro sí puede producir.
+	bag = BASE_SHAPES.keys()
+	bag.shuffle()
+
+
+func _draw_from_bag() -> String:
+	if bag.is_empty():
+		_refill_bag()
+	return bag.pop_front()
 
 
 func _shape_for(type: String, rot: int) -> Array:
@@ -356,7 +411,34 @@ func _ghost_landing_pos() -> Vector2i:
 
 func _spawn_piece() -> void:
 	piece_type = next_type
-	next_type = _random_type()
+	next_type = _draw_from_bag()
+	piece_rot = 0
+	piece_pos = Vector2i(3, -1)
+	piece_color = PIECE_COLORS[piece_type]
+	can_hold = true
+	_update_hud()
+
+	if not _can_place(piece_type, piece_rot, piece_pos):
+		_game_over()
+		return
+	_redraw_grid()
+
+
+func _on_hold_pressed() -> void:
+	## Guarda la pieza actual para usarla después, o la intercambia con la
+	## que ya tenías guardada — solo una vez por pieza (se rehabilita en
+	## _spawn_piece) para evitar el truco de alternar infinitamente.
+	if state != "playing" or not can_hold:
+		return
+	can_hold = false
+	if held_type == "":
+		held_type = piece_type
+		piece_type = next_type
+		next_type = _draw_from_bag()
+	else:
+		var tmp: String = held_type
+		held_type = piece_type
+		piece_type = tmp
 	piece_rot = 0
 	piece_pos = Vector2i(3, -1)
 	piece_color = PIECE_COLORS[piece_type]
