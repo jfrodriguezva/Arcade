@@ -24,6 +24,14 @@ const FREEZE_HITS := 3
 const SNOWBALL_SPEED := 320.0
 const SNOWBALL_MAX_DIST := 460.0
 const MAX_LEVEL := 10
+const FREEZE_DURATION := 6.0  # si no pateas al enemigo a tiempo, se descongela
+const ITEM_DROP_CHANCE := 0.4
+const ITEM_LIFETIME := 8.0
+const ITEM_VIEW_SIZE := Vector2(26, 26)
+const MAX_POWER_LEVEL := 2
+const ITEM_WEIGHTS := {"fruit": 62, "power_snow": 30, "extra_life": 8}
+const ITEM_ICON := {"fruit": "🍒", "power_snow": "❄", "extra_life": "❤"}
+const ITEM_COLOR := {"fruit": UIKit.COLOR_DANGER, "power_snow": UIKit.COLOR_ACCENT_2, "extra_life": UIKit.COLOR_ACCENT}
 
 const PLATFORMS := [
 	Rect2(0, 850, 640, 30),
@@ -37,9 +45,11 @@ const PLATFORMS := [
 	Rect2(400, 140, 200, 20),
 ]
 
-const HELP_TEXT := "Salta entre plataformas con ◀ ▶ y ⬆. Dispara ❄ para congelar enemigos (necesitan 3 golpes; se ponen azules cuando están congelados).
+const HELP_TEXT := "Salta entre plataformas con ◀ ▶ y ⬆. Dispara ❄ para congelar enemigos (necesitan varios golpes; se ponen azules cuando están congelados).
 
-Camina hacia un enemigo congelado para empujarlo: se convierte en una bola de nieve que rueda y destruye a cualquier otro enemigo que toque.
+Camina hacia un enemigo congelado para empujarlo: se convierte en una bola de nieve que rueda y destruye en cadena a cualquier otro enemigo que toque. ¡Si no lo pateas a tiempo, se descongela solo!
+
+Al destruir enemigos con la bola de nieve, a veces sueltan un ítem: 🍒 puntos extra, ❄ mejora tu nieve (menos golpes para congelar), ❤ vida extra. Recógelos antes de que desaparezcan.
 
 Tocar a un enemigo que camina (no congelado) te quita una vida. Limpia todos los enemigos del nivel para avanzar. Hay 10 niveles, cada uno con más enemigos. Pierdes si se acaban tus 3 vidas."
 
@@ -54,6 +64,8 @@ var player_phase: float = 0.0
 
 var enemies: Array = []
 var projectiles: Array = []
+var items: Array = []
+var power_level: int = 0
 
 var score: int = 0
 var lives: int = 3
@@ -209,6 +221,7 @@ func _new_game() -> void:
 	score = 0
 	lives = 3
 	level = 1
+	power_level = 0
 	state = "playing"
 	_setup_level()
 
@@ -220,6 +233,10 @@ func _setup_level() -> void:
 	for p: Dictionary in projectiles:
 		p["view"].queue_free()
 	projectiles.clear()
+
+	for it: Dictionary in items:
+		it["view"].queue_free()
+	items.clear()
 
 	for e: Dictionary in enemies:
 		e["view"].queue_free()
@@ -300,6 +317,7 @@ func _process(delta: float) -> void:
 	_update_player(delta)
 	_update_enemies(delta)
 	_update_projectiles(delta)
+	_update_items(delta)
 
 	if _all_enemies_cleared():
 		_advance_level()
@@ -363,6 +381,22 @@ func _update_enemies(delta: float) -> void:
 				_update_walking_enemy(e, delta)
 			"rolling":
 				_update_rolling_enemy(e, delta)
+			"frozen":
+				e["frozen_timer"] -= delta
+				if e["frozen_timer"] <= 0.0:
+					_thaw_enemy(e)
+
+
+func _thaw_enemy(e: Dictionary) -> void:
+	## Si no lo pateas a tiempo, el enemigo congelado se descongela solo y
+	## vuelve a caminar (y a ser peligroso), como en el Snow Bros original.
+	e["state"] = "walking"
+	e["hits"] = 0
+	e["view"].setup("snow_enemy", UIKit.COLOR_DANGER)
+
+
+func _effective_freeze_hits() -> int:
+	return max(1, FREEZE_HITS - power_level)
 
 
 func _update_walking_enemy(e: Dictionary, delta: float) -> void:
@@ -396,6 +430,8 @@ func _update_rolling_enemy(e: Dictionary, delta: float) -> void:
 			_remove_enemy(other)
 			score += 100
 			_update_hud()
+			if randf() < ITEM_DROP_CHANCE:
+				_spawn_item(other["pos"] + ENEMY_SIZE / 2.0)
 
 
 func _remove_enemy(e: Dictionary) -> void:
@@ -421,14 +457,71 @@ func _update_projectiles(delta: float) -> void:
 				continue
 			if proj_rect.intersects(Rect2(e["pos"], ENEMY_SIZE)):
 				e["hits"] += 1
-				if e["hits"] >= FREEZE_HITS:
+				if e["hits"] >= _effective_freeze_hits():
 					e["state"] = "frozen"
+					e["frozen_timer"] = FREEZE_DURATION
 					e["view"].setup("snow_enemy", UIKit.COLOR_ACCENT_2)
 				hit = true
 				break
 		if hit:
 			p["view"].queue_free()
 			projectiles.remove_at(i)
+
+
+func _roll_item_kind() -> String:
+	var total := 0
+	for w: int in ITEM_WEIGHTS.values():
+		total += w
+	var r: int = randi() % total
+	var acc := 0
+	for kind: String in ITEM_WEIGHTS.keys():
+		acc += ITEM_WEIGHTS[kind]
+		if r < acc:
+			return kind
+	return "fruit"
+
+
+func _spawn_item(center: Vector2) -> void:
+	var kind: String = _roll_item_kind()
+	var panel := PanelContainer.new()
+	panel.add_theme_stylebox_override("panel", UIKit.stylebox(ITEM_COLOR[kind].darkened(0.55), ITEM_COLOR[kind], 8, 2))
+	panel.size = ITEM_VIEW_SIZE
+	panel.position = center - ITEM_VIEW_SIZE / 2.0
+	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var lbl := Label.new()
+	lbl.text = ITEM_ICON[kind]
+	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	lbl.add_theme_font_size_override("font_size", 14)
+	panel.add_child(lbl)
+	play_area.add_child(panel)
+	items.append({"pos": panel.position, "kind": kind, "view": panel, "life": ITEM_LIFETIME})
+
+
+func _update_items(delta: float) -> void:
+	var player_rect := Rect2(player_pos, PLAYER_SIZE)
+	for i in range(items.size() - 1, -1, -1):
+		var it: Dictionary = items[i]
+		it["life"] -= delta
+		var fading: bool = it["life"] < 2.0
+		it["view"].modulate.a = (0.4 + 0.6 * absf(sin(it["life"] * 10.0))) if fading else 1.0
+		if it["life"] <= 0.0 or Rect2(it["pos"], ITEM_VIEW_SIZE).intersects(player_rect):
+			if it["life"] > 0.0:
+				_apply_item(it["kind"])
+			it["view"].queue_free()
+			items.remove_at(i)
+
+
+func _apply_item(kind: String) -> void:
+	match kind:
+		"fruit":
+			score += 50
+		"power_snow":
+			power_level = min(power_level + 1, MAX_POWER_LEVEL)
+		"extra_life":
+			lives += 1
+	AudioManager.play_place()
+	_update_hud()
 
 
 func _all_enemies_cleared() -> bool:
