@@ -20,14 +20,19 @@ const DIRS := [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]
 const DRONE_SPIN_IDLE := 0.7   # vueltas/seg cuando el marcador está en zona segura
 const DRONE_SPIN_TRACE := 2.6  # vueltas/seg cuando está trazando una línea activa
 const ENEMY_FLAP_SPEED := 1.5  # vueltas/seg del ciclo de animación del alien
+const LEVEL_TIME_BASE := 75.0
+const LEVEL_TIME_MIN := 42.0
+const SPARX_MIN_LEVEL := 3
+const SPARX_SPEED := 6.0  # celdas de borde por segundo
 
 const HELP_TEXT := "Tu marcador empieza en el borde (zona segura). Usa las flechas para moverte.
 
-- Mientras estés en el borde o en zona ya capturada, estás a salvo.
-- Al entrar a la zona sin revelar, vas dejando una traza. Si un enemigo (rojo) toca tu traza antes de que regreses al borde, pierdes una vida y la traza se borra.
-- Al volver a tocar zona segura, el área que encerraste se captura y revela el paisaje de abajo — a menos que haya un enemigo adentro, ese pedazo se queda sin capturar.
+- Mientras estés en el borde o en zona ya capturada, estás a salvo... de los enemigos rojos. Desde el nivel 3 patrullan el borde exterior unos centinelas violeta (Sparx): si te tocan, aunque estés en zona 'segura', pierdes una vida igual.
+- Al entrar a la zona sin revelar, vas dejando una traza. Si un enemigo rojo toca tu traza antes de que regreses al borde, pierdes una vida y la traza se borra.
+- Al volver a tocar zona segura, el área que encerraste se captura y revela el paisaje de abajo — a menos que haya un enemigo adentro, ese pedazo se queda sin capturar. Entre más grande el área capturada de una vez, más puntos.
+- Hay un límite de tiempo por nivel (arriba a la derecha). Si se agota, pierdes una vida y se reinicia el reloj.
 
-Captura el 75% del área para pasar de nivel. Hay 10 niveles, cada uno con más enemigos y más rápidos. Pierdes si se acaban tus 3 vidas."
+Captura el 75% del área para pasar de nivel. Hay 10 niveles, cada uno con más enemigos, más rápidos y menos tiempo. Pierdes si se acaban tus 3 vidas."
 
 var grid_state: Array = []
 var target_colors: Array = []
@@ -40,6 +45,8 @@ var trail: Array = []
 var drone_phase: float = 0.0
 
 var enemies: Array = []
+var perimeter_cells: Array = []
+var time_left: float = LEVEL_TIME_BASE
 
 var score: int = 0
 var lives: int = 3
@@ -53,6 +60,7 @@ var lives_label: Label
 var status_label: Label
 var percent_label: Label
 var percent_bar: ProgressBar
+var time_label: Label
 
 
 func _ready() -> void:
@@ -104,6 +112,8 @@ func _build_ui() -> void:
 	hud_row.add_child(score_label)
 	lives_label = UIKit.title_label("♥ 3", 13, UIKit.COLOR_ACCENT)
 	hud_row.add_child(lives_label)
+	time_label = UIKit.title_label("⏱ 75", 13, UIKit.COLOR_ACCENT_2)
+	hud_row.add_child(time_label)
 
 	var progress_row := HBoxContainer.new()
 	progress_row.add_theme_constant_override("separation", 8)
@@ -259,6 +269,8 @@ func _setup_level() -> void:
 	player_cell = Vector2i(0, 0)
 	current_dir = Vector2i.ZERO
 	trail.clear()
+	_build_perimeter()
+	time_left = _level_time_limit()
 
 	for e: Dictionary in enemies:
 		e["view"].queue_free()
@@ -275,11 +287,57 @@ func _setup_level() -> void:
 		play_area.add_child(view)
 		var start_dir: Vector2i = _random_dir()
 		view.set_facing(_dir_to_deg(start_dir))
-		enemies.append({"pos": pos, "dir": start_dir, "view": view, "interval": enemy_interval, "timer": 0.0, "phase": randf()})
+		enemies.append({
+			"kind": "qix", "pos": pos, "dir": start_dir, "view": view,
+			"interval": enemy_interval, "timer": 0.0, "phase": randf(),
+		})
+
+	# Sparx: centinelas que patrullan el borde exterior desde el nivel 3 —
+	# son peligrosos aunque el jugador esté en zona "segura", igual que en
+	# el arcade original (donde la orilla no siempre es garantía de vida).
+	var sparx_count: int = 0
+	if level >= SPARX_MIN_LEVEL:
+		sparx_count = 1 + (level - SPARX_MIN_LEVEL) / 3
+	sparx_count = min(sparx_count, 3)
+	for i in range(sparx_count):
+		# Se reparten por el borde empezando lejos de (0,0), que es donde
+		# arranca el jugador — spawnear un Sparx justo ahí sería una
+		# pérdida de vida instantánea e injusta al iniciar el nivel.
+		var spacing: int = perimeter_cells.size() / max(sparx_count, 1)
+		var s0: int = posmod(perimeter_cells.size() / 3 + spacing * i, perimeter_cells.size())
+		var pos: Vector2i = perimeter_cells[s0]
+		var view := EntitySprite.new()
+		view.size = Vector2(CELL * 0.78, CELL * 0.78)
+		view.position = Vector2(pos.x * CELL, pos.y * CELL)
+		view.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		view.setup("sentry", Color(0.678, 0.478, 0.925), UIKit.COLOR_TEXT, i)
+		play_area.add_child(view)
+		enemies.append({
+			"kind": "sparx", "s": s0, "step": 1 if i % 2 == 0 else -1,
+			"pos": pos, "view": view, "interval": 1.0 / SPARX_SPEED, "timer": 0.0, "phase": randf(),
+		})
 
 	status_label.text = "Nivel %d/%d" % [level, MAX_LEVEL]
 	_redraw_grid()
 	_update_hud()
+
+
+func _level_time_limit() -> float:
+	return max(LEVEL_TIME_MIN, LEVEL_TIME_BASE - (level - 1) * 3.5)
+
+
+func _build_perimeter() -> void:
+	## Recorre el anillo exterior del grid en orden, para que los Sparx
+	## puedan patrullarlo incrementando/decrementando un solo índice.
+	perimeter_cells.clear()
+	for x in range(GRID_W):
+		perimeter_cells.append(Vector2i(x, 0))
+	for y in range(1, GRID_H):
+		perimeter_cells.append(Vector2i(GRID_W - 1, y))
+	for x in range(GRID_W - 2, -1, -1):
+		perimeter_cells.append(Vector2i(x, GRID_H - 1))
+	for y in range(GRID_H - 2, 0, -1):
+		perimeter_cells.append(Vector2i(0, y))
 
 
 func _random_dir() -> Vector2i:
@@ -289,6 +347,7 @@ func _random_dir() -> Vector2i:
 func _update_hud() -> void:
 	score_label.text = "★ %d" % score
 	lives_label.text = "♥ %d" % lives
+	time_label.text = "⏱ %d" % ceili(max(time_left, 0.0))
 	var pct: float = _capture_percent()
 	percent_bar.value = pct
 	percent_label.text = "%.0f%% / %d%%" % [pct, int(CAPTURE_TARGET)]
@@ -307,6 +366,12 @@ func _process(delta: float) -> void:
 	if state != "playing":
 		return
 
+	time_left -= delta
+	time_label.text = "⏱ %d" % ceili(max(time_left, 0.0))
+	if time_left <= 0.0:
+		_time_out()
+		return
+
 	move_timer += delta
 	if move_timer >= MOVE_INTERVAL and current_dir != Vector2i.ZERO:
 		move_timer = 0.0
@@ -322,7 +387,10 @@ func _process(delta: float) -> void:
 		e["timer"] += delta
 		if e["timer"] >= e["interval"]:
 			e["timer"] = 0.0
-			_move_enemy(e)
+			if e["kind"] == "sparx":
+				_move_sparx(e)
+			else:
+				_move_enemy(e)
 		e["phase"] = fposmod(e["phase"] + delta * ENEMY_FLAP_SPEED, 1.0)
 		e["view"].set_phase(e["phase"])
 
@@ -374,19 +442,26 @@ func _try_move_player() -> void:
 func _complete_capture() -> void:
 	var reachable: Dictionary = {}
 	for e: Dictionary in enemies:
-		_flood_fill_from(e["pos"], reachable)
+		if e["kind"] == "qix":
+			_flood_fill_from(e["pos"], reachable)
 
+	var newly_captured := 0
 	for y in range(GRID_H):
 		for x in range(GRID_W):
 			var key := Vector2i(x, y)
 			if grid_state[y][x] == "trail":
 				grid_state[y][x] = "captured"
+				newly_captured += 1
 			elif grid_state[y][x] == "open" and not reachable.has(key):
 				grid_state[y][x] = "captured"
+				newly_captured += 1
 
 	trail.clear()
 	_redraw_grid()
-	score += 50
+	# Puntaje proporcional al área encerrada de una sola vez (como el
+	# arcade original: capturas grandes valen mucho más que ir celda a
+	# celda), con un pequeño extra fijo por cerrar el trazo.
+	score += 20 + newly_captured * 2
 	_update_hud()
 
 	if _capture_percent() >= CAPTURE_TARGET:
@@ -430,14 +505,33 @@ func _enemy_can_enter(p: Vector2i) -> bool:
 	return grid_state[p.y][p.x] == "open"
 
 
+func _move_sparx(e: Dictionary) -> void:
+	e["s"] = posmod(e["s"] + e["step"], perimeter_cells.size())
+	e["pos"] = perimeter_cells[e["s"]]
+	e["view"].position = Vector2(e["pos"].x * CELL, e["pos"].y * CELL)
+
+
 func _check_enemy_collisions() -> void:
 	for e: Dictionary in enemies:
+		if e["kind"] == "sparx":
+			# Los Sparx patrullan el borde: te alcanzan aunque estés en
+			# zona "segura" (a diferencia de los Qix, que solo amenazan
+			# tu traza dentro del área sin revelar).
+			if e["pos"] == player_cell:
+				_lose_life()
+				return
+			continue
 		if e["pos"] == player_cell and not trail.is_empty():
 			_lose_life()
 			return
 		if grid_state[e["pos"].y][e["pos"].x] == "trail":
 			_lose_life()
 			return
+
+
+func _time_out() -> void:
+	time_left = _level_time_limit()
+	_lose_life()
 
 
 func _lose_life() -> void:
