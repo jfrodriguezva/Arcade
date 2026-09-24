@@ -39,9 +39,8 @@ const TILE_GAP := 5.0
 var status_label: Label
 var hand_title_label: Label
 var chain_canvas: Control
-var chain_scroll: ScrollContainer
 var info_label: Label
-var hand_row: HBoxContainer
+var hand_row: HFlowContainer
 var end_left_btn: Button
 var end_right_btn: Button
 var draw_btn: Button
@@ -84,19 +83,20 @@ func _build_ui() -> void:
 
 	vbox.add_child(UIKit.title_label("Mesa", 14, UIKit.COLOR_TEXT_DIM))
 
+	# Sin ScrollContainer aquí a propósito: el panel se agranda solo según
+	# el contenido de la cadena (chain_canvas ajusta su custom_minimum_size
+	# en cada redibujo), en vez de recortar a una altura fija y obligar a
+	# scrolear dentro del tablero.
 	var chain_panel := PanelContainer.new()
-	chain_panel.custom_minimum_size = Vector2(0, 340)
 	chain_panel.add_theme_stylebox_override("panel", UIKit.stylebox(UIKit.COLOR_PANEL, UIKit.COLOR_ACCENT_3, 14, 2))
 	vbox.add_child(chain_panel)
 	var chain_margin := MarginContainer.new()
 	for side: String in ["margin_left", "margin_right", "margin_top", "margin_bottom"]:
 		chain_margin.add_theme_constant_override(side, 10)
 	chain_panel.add_child(chain_margin)
-	chain_scroll = ScrollContainer.new()
-	chain_margin.add_child(chain_scroll)
 	chain_canvas = Control.new()
 	chain_canvas.custom_minimum_size = Vector2(TABLE_W, TILE_LONG + 20)
-	chain_scroll.add_child(chain_canvas)
+	chain_margin.add_child(chain_canvas)
 
 	var ends_row := HBoxContainer.new()
 	ends_row.alignment = BoxContainer.ALIGNMENT_CENTER
@@ -118,12 +118,13 @@ func _build_ui() -> void:
 	hand_title_label = UIKit.title_label("Tu mano", 16, UIKit.COLOR_TEXT_DIM)
 	vbox.add_child(hand_title_label)
 
-	var hand_scroll := ScrollContainer.new()
-	hand_scroll.custom_minimum_size = Vector2(0, 150)
-	vbox.add_child(hand_scroll)
-	hand_row = HBoxContainer.new()
-	hand_row.add_theme_constant_override("separation", 8)
-	hand_scroll.add_child(hand_row)
+	# HFlowContainer en vez de una fila con scroll horizontal: si no caben
+	# todas las fichas en una línea, pasa las que sobran a la siguiente
+	# fila automáticamente, sin necesitar scrolear para verlas todas.
+	hand_row = HFlowContainer.new()
+	hand_row.add_theme_constant_override("h_separation", 8)
+	hand_row.add_theme_constant_override("v_separation", 8)
+	vbox.add_child(hand_row)
 
 	var actions_row := HBoxContainer.new()
 	actions_row.alignment = BoxContainer.ALIGNMENT_CENTER

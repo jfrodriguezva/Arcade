@@ -403,6 +403,7 @@ func _kick_snowball(e: Dictionary, dir: float) -> void:
 	e["vel"] = Vector2(SNOWBALL_SPEED * (1.0 if dir >= 0.0 else -1.0), 0.0)
 	e["start_x"] = e["pos"].x
 	e["view"].setup("snowball", Color.WHITE)
+	AudioManager.play_click()
 
 
 func _update_enemies(delta: float) -> void:
@@ -459,10 +460,27 @@ func _update_walking_enemy(e: Dictionary, delta: float) -> void:
 
 
 func _update_rolling_enemy(e: Dictionary, delta: float) -> void:
-	e["pos"].x += e["vel"].x * delta
+	# La bola de nieve ya no se queda pegada a la altura de la plataforma
+	# donde la pateaste: si se sale de la orilla, cae de verdad (gravedad
+	# real) y sigue rodando en la plataforma de abajo — así puede llegar a
+	# los enemigos de pisos inferiores, como en el Snow Bros original.
+	e["vel"].y += GRAVITY * delta
+	var prev_bottom: float = e["pos"].y + ENEMY_SIZE.y
+	e["pos"] += e["vel"] * delta
+
+	if e["vel"].y >= 0.0:
+		var new_bottom: float = e["pos"].y + ENEMY_SIZE.y
+		for p: Rect2 in PLATFORMS:
+			var within_x: bool = e["pos"].x + ENEMY_SIZE.x > p.position.x and e["pos"].x < p.position.x + p.size.x
+			if within_x and prev_bottom <= p.position.y + 6.0 and new_bottom >= p.position.y:
+				e["pos"].y = p.position.y - ENEMY_SIZE.y
+				e["vel"].y = 0.0
+				break
+
 	e["view"].position = _enemy_view_pos(e["pos"])
 
-	if e["pos"].x < 0.0 or e["pos"].x + ENEMY_SIZE.x > PLAY_W or abs(e["pos"].x - e["start_x"]) > SNOWBALL_MAX_DIST:
+	if e["pos"].x < 0.0 or e["pos"].x + ENEMY_SIZE.x > PLAY_W or e["pos"].y > PLAY_H \
+			or abs(e["pos"].x - e["start_x"]) > SNOWBALL_MAX_DIST:
 		_remove_enemy(e)
 		return
 
@@ -471,11 +489,28 @@ func _update_rolling_enemy(e: Dictionary, delta: float) -> void:
 		if other == e or other["state"] == "removed" or other["state"] == "rolling":
 			continue
 		if ball_rect.intersects(Rect2(other["pos"], ENEMY_SIZE)):
+			_spawn_impact_burst(other["pos"] + ENEMY_SIZE / 2.0)
 			_remove_enemy(other)
 			score += 100
 			_update_hud()
 			if randf() < ITEM_DROP_CHANCE:
 				_spawn_item(other["pos"] + ENEMY_SIZE / 2.0)
+
+
+func _spawn_impact_burst(center: Vector2) -> void:
+	## Destello breve y no-bloqueante al reventar un enemigo con la bola de
+	## nieve, para que el golpe se sienta con más impacto que solo hacerlo
+	## desaparecer en silencio.
+	var flash := EntitySprite.new()
+	var fsize: Vector2 = ENEMY_VIEW_SIZE * 1.5
+	flash.size = fsize
+	flash.position = center - fsize / 2.0
+	flash.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	flash.setup("blast", Color(1, 1, 1), UIKit.COLOR_ACCENT_2)
+	play_area.add_child(flash)
+	var tw := create_tween()
+	tw.tween_method(flash.set_phase, 0.0, 1.0, 0.26)
+	tw.tween_callback(flash.queue_free)
 
 
 func _remove_enemy(e: Dictionary) -> void:

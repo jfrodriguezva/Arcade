@@ -213,19 +213,30 @@ func _on_column_pressed(col: int) -> void:
 	var my_session: int = session_id
 	var owner: String = current_turn
 	var row: int = _drop(board, col, owner)
-	_redraw_all()
-	UIKit.pulse(cell_views[row][col])
 
 	var winner: String = _winner_on(board)
 	if winner != "":
+		_redraw_all()
+		UIKit.pulse(cell_views[row][col])
 		_end_game(winner)
 		return
 	if _valid_columns(board).is_empty():
+		_redraw_all()
+		UIKit.pulse(cell_views[row][col])
 		_end_game_draw()
 		return
 
+	# Importante: cambiar el turno ANTES de redibujar. _redraw_all() decide
+	# si los botones de columna quedan habilitados según current_turn; si
+	# se llamaba antes de este cambio, los botones quedaban reflejando el
+	# turno VIEJO (deshabilitados para siempre después de que la máquina
+	# respondía, porque nunca se volvían a redibujar tras el segundo
+	# cambio de turno) — eso es lo que hacía que "ya no se hiciera nada"
+	# después de la primera jugada.
 	var next_turn: String = "bot" if owner == "player" else "player"
 	current_turn = next_turn
+	_redraw_all()
+	UIKit.pulse(cell_views[row][col])
 	_update_turn_status(next_turn)
 	if mode == "pve" and next_turn == "bot":
 		await get_tree().create_timer(0.8).timeout
@@ -249,18 +260,22 @@ func _bot_move() -> void:
 			chosen = _pick_minimax_move(moves, 4)
 
 	var row: int = _drop(board, chosen, "bot")
-	_redraw_all()
-	UIKit.pulse(cell_views[row][chosen])
 
 	var winner: String = _winner_on(board)
 	if winner != "":
+		_redraw_all()
+		UIKit.pulse(cell_views[row][chosen])
 		_end_game(winner)
 		return
 	if _valid_columns(board).is_empty():
+		_redraw_all()
+		UIKit.pulse(cell_views[row][chosen])
 		_end_game_draw()
 		return
 
 	current_turn = "player"
+	_redraw_all()
+	UIKit.pulse(cell_views[row][chosen])
 	_update_turn_status("player")
 
 
