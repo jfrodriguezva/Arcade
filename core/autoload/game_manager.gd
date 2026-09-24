@@ -13,6 +13,14 @@ var games: Array[Dictionary] = [
 		"enabled": true,
 	},
 	{
+		"id": "connect_four",
+		"title": "Cuatro en Línea",
+		"icon": "🔵",
+		"category": "mesa",
+		"scene": "res://games/board/connect_four/connect_four.tscn",
+		"enabled": true,
+	},
+	{
 		"id": "battleship",
 		"title": "Batalla Naval",
 		"icon": "🚢",
@@ -26,6 +34,14 @@ var games: Array[Dictionary] = [
 		"icon": "🃏",
 		"category": "mesa",
 		"scene": "res://games/board/solitaire/solitaire.tscn",
+		"enabled": true,
+	},
+	{
+		"id": "spider_solitaire",
+		"title": "Solitario Araña",
+		"icon": "🕷️",
+		"category": "mesa",
+		"scene": "res://games/board/spider_solitaire/spider_solitaire.tscn",
 		"enabled": true,
 	},
 	{
@@ -58,6 +74,14 @@ var games: Array[Dictionary] = [
 		"icon": "🐓",
 		"category": "mesa",
 		"scene": "res://games/board/loteria/loteria.tscn",
+		"enabled": true,
+	},
+	{
+		"id": "bingo",
+		"title": "Bingo",
+		"icon": "🎱",
+		"category": "mesa",
+		"scene": "res://games/board/bingo/bingo.tscn",
 		"enabled": true,
 	},
 	{
@@ -122,6 +146,14 @@ var games: Array[Dictionary] = [
 		"icon": "🟤",
 		"category": "mesa",
 		"scene": "res://games/board/backgammon/backgammon.tscn",
+		"enabled": true,
+	},
+	{
+		"id": "memorama",
+		"title": "Memorama",
+		"icon": "🧠",
+		"category": "mesa",
+		"scene": "res://games/board/memorama/memorama.tscn",
 		"enabled": true,
 	},
 	{
