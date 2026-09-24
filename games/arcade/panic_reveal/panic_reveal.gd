@@ -41,6 +41,13 @@ var cell_views: Array = []
 var player_cell: Vector2i = Vector2i.ZERO
 var current_dir: Vector2i = Vector2i.ZERO
 var move_timer: float = 0.0
+## El marcador (y los enemigos) ya no "saltan" de celda en celda: cada
+## paso se interpola suavemente entre la posición anterior y la nueva a
+## lo largo del mismo tick, para que el recorrido se sienta continuo en
+## vez de cuadriculado. La lógica de colisión/captura sigue siendo por
+## celda (grid_state), solo cambia cómo se dibuja el movimiento.
+var player_prev_pos: Vector2 = Vector2.ZERO
+var player_target_pos: Vector2 = Vector2.ZERO
 var trail: Array = []
 var drone_phase: float = 0.0
 
@@ -268,6 +275,10 @@ func _setup_level() -> void:
 
 	player_cell = Vector2i(0, 0)
 	current_dir = Vector2i.ZERO
+	move_timer = 0.0
+	player_prev_pos = Vector2.ZERO
+	player_target_pos = Vector2.ZERO
+	player_view.position = Vector2.ZERO
 	trail.clear()
 	_build_perimeter()
 	time_left = _level_time_limit()
@@ -287,9 +298,11 @@ func _setup_level() -> void:
 		play_area.add_child(view)
 		var start_dir: Vector2i = _random_dir()
 		view.set_facing(_dir_to_deg(start_dir))
+		var pix: Vector2 = Vector2(pos) * CELL
 		enemies.append({
 			"kind": "qix", "pos": pos, "dir": start_dir, "view": view,
 			"interval": enemy_interval, "timer": 0.0, "phase": randf(),
+			"prev_pixel": pix, "target_pixel": pix,
 		})
 
 	# Sparx: centinelas que patrullan el borde exterior desde el nivel 3 —
@@ -312,9 +325,11 @@ func _setup_level() -> void:
 		view.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		view.setup("sentry", Color(0.678, 0.478, 0.925), UIKit.COLOR_TEXT, i)
 		play_area.add_child(view)
+		var spix: Vector2 = Vector2(pos) * CELL
 		enemies.append({
 			"kind": "sparx", "s": s0, "step": 1 if i % 2 == 0 else -1,
 			"pos": pos, "view": view, "interval": 1.0 / SPARX_SPEED, "timer": 0.0, "phase": randf(),
+			"prev_pixel": spix, "target_pixel": spix,
 		})
 
 	status_label.text = "Nivel %d/%d" % [level, MAX_LEVEL]
@@ -373,9 +388,15 @@ func _process(delta: float) -> void:
 		return
 
 	move_timer += delta
-	if move_timer >= MOVE_INTERVAL and current_dir != Vector2i.ZERO:
+	if move_timer >= MOVE_INTERVAL:
 		move_timer = 0.0
-		_try_move_player()
+		player_prev_pos = Vector2(player_cell) * CELL
+		if current_dir != Vector2i.ZERO:
+			_try_move_player()
+		player_target_pos = Vector2(player_cell) * CELL
+	if state == "playing":
+		var pt: float = clamp(move_timer / MOVE_INTERVAL, 0.0, 1.0)
+		player_view.position = player_prev_pos.lerp(player_target_pos, pt)
 
 	# El marcador gira más rápido mientras traza una línea activa (peligro),
 	# y despacio cuando está a salvo en el borde o en zona ya capturada.
@@ -387,10 +408,14 @@ func _process(delta: float) -> void:
 		e["timer"] += delta
 		if e["timer"] >= e["interval"]:
 			e["timer"] = 0.0
+			e["prev_pixel"] = Vector2(e["pos"]) * CELL
 			if e["kind"] == "sparx":
 				_move_sparx(e)
 			else:
 				_move_enemy(e)
+			e["target_pixel"] = Vector2(e["pos"]) * CELL
+		var et: float = clamp(e["timer"] / e["interval"], 0.0, 1.0)
+		e["view"].position = e["prev_pixel"].lerp(e["target_pixel"], et)
 		e["phase"] = fposmod(e["phase"] + delta * ENEMY_FLAP_SPEED, 1.0)
 		e["view"].set_phase(e["phase"])
 
@@ -422,7 +447,6 @@ func _try_move_player() -> void:
 
 	if next_state == "captured":
 		player_cell = next
-		player_view.position = Vector2(next.x * CELL, next.y * CELL)
 		if not trail.is_empty():
 			_complete_capture()
 		return
@@ -435,7 +459,6 @@ func _try_move_player() -> void:
 	grid_state[next.y][next.x] = "trail"
 	trail.append(next)
 	player_cell = next
-	player_view.position = Vector2(next.x * CELL, next.y * CELL)
 	_restyle_trail()
 
 
@@ -495,7 +518,6 @@ func _move_enemy(e: Dictionary) -> void:
 		if not _enemy_can_enter(next):
 			return
 	e["pos"] = next
-	e["view"].position = Vector2(next.x * CELL, next.y * CELL)
 	e["view"].set_facing(_dir_to_deg(e["dir"]))
 
 
@@ -508,7 +530,6 @@ func _enemy_can_enter(p: Vector2i) -> bool:
 func _move_sparx(e: Dictionary) -> void:
 	e["s"] = posmod(e["s"] + e["step"], perimeter_cells.size())
 	e["pos"] = perimeter_cells[e["s"]]
-	e["view"].position = Vector2(e["pos"].x * CELL, e["pos"].y * CELL)
 
 
 func _check_enemy_collisions() -> void:
@@ -541,6 +562,11 @@ func _lose_life() -> void:
 	trail.clear()
 	player_cell = Vector2i(0, 0)
 	current_dir = Vector2i.ZERO
+	move_timer = 0.0
+	# Reinicio instantáneo (no un planeo desde donde murió): tanto el punto
+	# de partida como el de llegada de la interpolación quedan en el origen.
+	player_prev_pos = Vector2.ZERO
+	player_target_pos = Vector2.ZERO
 	player_view.position = Vector2.ZERO
 	_redraw_grid()
 	_update_hud()
