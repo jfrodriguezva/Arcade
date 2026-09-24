@@ -24,14 +24,24 @@ const PLAYER_HAT_COLOR := Color(0.80, 0.63, 0.36)     # sombrero tostado
 const BANDIT_MELEE_COLOR := Color(0.52, 0.17, 0.15)   # forajido cuerpo a cuerpo, rojo polvoriento
 const BANDIT_RANGED_COLOR := Color(0.30, 0.40, 0.37)  # forajido a distancia, verde apagado
 const BANDIT_COLOR2 := Color(0.16, 0.16, 0.18)
+const BOSS_COLOR := Color(0.36, 0.10, 0.42)
 const BULLET_COLOR := Color(1.0, 0.86, 0.46)
 const HIT_FLASH_DURATION := 0.18
 
-const HELP_TEXT := "Muévete con ◀ ▶ (también apuntas hacia donde te mueves) y dispara con 🔫.
+const JUMP_DURATION := 0.55  # mientras salta, esquiva balas rasantes (como en Sunset Riders)
+const BOSS_HITS := 6
+const WEAPON_DROP_CHANCE := 0.22
+const WEAPON_DURATION := 10.0
+const SHOTGUN_COOLDOWN := 0.34
+const SHOTGUN_SPREAD_DEG := 14.0
 
-Los bandidos entran por los lados: los que se acercan directo te quitan una vida si te tocan (dispárales antes). Los que se quedan a distancia disparan hacia ti — muévete para esquivar sus balas.
+const HELP_TEXT := "Muévete con ◀ ▶ (también apuntas hacia donde te mueves) y dispara con 🔫. Usa ⤴ para saltar y esquivar disparos rasantes.
 
-Limpia la cuota de bandidos del nivel para pasar al siguiente. Hay 10 niveles, cada uno con más bandidos, más rápidos y con más disparadores a distancia. Pierdes si se acaban tus 3 vidas."
+Los bandidos entran por los lados: los que se acercan directo te quitan una vida si te tocan (dispárales antes). Los que se quedan a distancia disparan hacia ti — muévete o salta para esquivar sus balas.
+
+Algunos bandidos sueltan una escopeta al caer: dispara 3 balas en abanico por tiempo limitado.
+
+Al llegar a la cuota de bandidos, aparece el jefe del nivel — aguanta varios disparos y alterna entre embestidas y ráfagas. Derrótalo para pasar al siguiente nivel. Hay 10 niveles, cada uno con más bandidos, más rápidos y jefes más resistentes. Pierdes si se acaban tus 3 vidas."
 
 var player_x: float = 0.0
 var facing: int = 1
@@ -43,6 +53,7 @@ var player_phase: float = 0.0
 var enemies: Array = []
 var bullets: Array = []
 var enemy_bullets: Array = []
+var weapon_drops: Array = []
 
 var kills: int = 0
 var kills_needed: int = 8
@@ -50,6 +61,12 @@ var spawn_timer: float = 0.0
 var spawn_interval: float = 1.2
 var enemy_speed: float = 70.0
 var ranged_chance: float = 0.2
+var boss_spawned: bool = false
+var boss: Dictionary = {}
+
+var jump_timer: float = 0.0
+var weapon: String = "pistol"  # "pistol" | "shotgun"
+var weapon_timer: float = 0.0
 
 var score: int = 0
 var lives: int = 3
@@ -168,6 +185,14 @@ func _build_ui() -> void:
 	right_btn.button_up.connect(func() -> void: moving_right = false)
 	controls.add_child(right_btn)
 
+	var jump_btn := Button.new()
+	jump_btn.text = "⤴"
+	jump_btn.custom_minimum_size = Vector2(80, 68)
+	jump_btn.add_theme_font_size_override("font_size", 24)
+	UIKit.style_button(jump_btn, UIKit.COLOR_ACCENT_3)
+	jump_btn.pressed.connect(_on_jump_pressed)
+	controls.add_child(jump_btn)
+
 	var restart_btn := Button.new()
 	restart_btn.text = "↻  Nueva partida"
 	restart_btn.custom_minimum_size = Vector2(200, 48)
@@ -207,6 +232,9 @@ func _setup_level() -> void:
 	for b: Dictionary in enemy_bullets:
 		b["view"].queue_free()
 	enemy_bullets.clear()
+	for w: Dictionary in weapon_drops:
+		w["view"].queue_free()
+	weapon_drops.clear()
 
 	kills = 0
 	kills_needed = 7 + level
@@ -214,6 +242,11 @@ func _setup_level() -> void:
 	spawn_interval = max(0.55, 1.3 - level * 0.07)
 	enemy_speed = 65.0 + level * 6.0
 	ranged_chance = min(0.15 + level * 0.045, 0.6)
+	boss_spawned = false
+	boss = {}
+	jump_timer = 0.0
+	weapon = "pistol"
+	weapon_timer = 0.0
 
 	status_label.text = "Nivel %d / %d" % [level, MAX_LEVEL]
 	_update_hud()
@@ -226,19 +259,35 @@ func _update_hud() -> void:
 
 
 func _on_shoot_pressed() -> void:
+	var cooldown: float = SHOTGUN_COOLDOWN if weapon == "shotgun" else SHOOT_COOLDOWN
 	if state != "playing" or shoot_cooldown > 0.0:
 		return
-	shoot_cooldown = SHOOT_COOLDOWN
+	shoot_cooldown = cooldown
 	var pos := Vector2(player_x + (PLAYER_SIZE.x if facing > 0 else 0.0), GROUND_Y - PLAYER_SIZE.y / 2.0 - 6.0)
+	if weapon == "shotgun":
+		for vy: float in [-130.0, 0.0, 130.0]:
+			_fire_bullet(pos, Vector2(facing * BULLET_SPEED, vy))
+	else:
+		_fire_bullet(pos, Vector2(facing * BULLET_SPEED, 0))
+	UIKit.pulse(player_view)
+
+
+func _fire_bullet(pos: Vector2, vel: Vector2) -> void:
 	var view := EntitySprite.new()
 	view.size = Vector2(10, 18)
 	view.position = pos
 	view.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	view.setup("bullet", BULLET_COLOR, BULLET_COLOR.lightened(0.5))
-	view.set_facing(90.0 if facing > 0 else -90.0)
+	view.set_facing(rad_to_deg(atan2(vel.x, -vel.y)))
 	play_area.add_child(view)
-	bullets.append({"pos": pos, "vel": Vector2(facing * BULLET_SPEED, 0), "view": view})
-	UIKit.pulse(player_view)
+	bullets.append({"pos": pos, "vel": vel, "view": view})
+
+
+func _on_jump_pressed() -> void:
+	if state != "playing" or jump_timer > 0.0:
+		return
+	jump_timer = JUMP_DURATION
+	AudioManager.play_click()
 
 
 func _spawn_enemy() -> void:
@@ -265,6 +314,12 @@ func _process(delta: float) -> void:
 
 	if shoot_cooldown > 0.0:
 		shoot_cooldown -= delta
+	if jump_timer > 0.0:
+		jump_timer -= delta
+	if weapon_timer > 0.0:
+		weapon_timer -= delta
+		if weapon_timer <= 0.0:
+			weapon = "pistol"
 
 	_update_player(delta)
 
@@ -273,19 +328,25 @@ func _process(delta: float) -> void:
 		if e["state"] == "alive":
 			alive_count += 1
 
-	spawn_timer -= delta
-	if spawn_timer <= 0.0 and alive_count < MAX_ON_SCREEN and kills + alive_count < kills_needed:
-		spawn_timer = spawn_interval
-		_spawn_enemy()
+	if not boss_spawned and kills >= kills_needed and alive_count == 0:
+		boss_spawned = true
+		_spawn_boss()
+	elif not boss_spawned:
+		spawn_timer -= delta
+		if spawn_timer <= 0.0 and alive_count < MAX_ON_SCREEN and kills + alive_count < kills_needed:
+			spawn_timer = spawn_interval
+			_spawn_enemy()
 
 	for e: Dictionary in enemies:
 		if e["state"] == "alive":
 			_update_enemy(e, delta)
+	_update_boss(delta)
 
 	_update_bullets(delta)
 	_update_enemy_bullets(delta)
+	_update_weapon_drops(delta)
 
-	if state == "playing" and kills >= kills_needed and alive_count == 0:
+	if state == "playing" and boss_spawned and boss.is_empty():
 		_advance_level()
 
 
@@ -298,7 +359,13 @@ func _update_player(delta: float) -> void:
 		vx = PLAYER_SPEED
 		facing = 1
 	player_x = clamp(player_x + vx * delta, 0.0, PLAY_W - PLAYER_SIZE.x)
-	player_view.position = Vector2(player_x, GROUND_Y - PLAYER_SIZE.y)
+	# Arco de salto puramente visual (parábola sobre JUMP_DURATION): la
+	# esquiva real ya se resuelve por jump_timer en _update_enemy_bullets.
+	var hop: float = 0.0
+	if jump_timer > 0.0:
+		var jt: float = 1.0 - (jump_timer / JUMP_DURATION)
+		hop = sin(jt * PI) * 34.0
+	player_view.position = Vector2(player_x, GROUND_Y - PLAYER_SIZE.y - hop)
 	player_view.set_facing(0.0, facing < 0)
 	var bob_speed: float = 2.4 if (moving_left or moving_right) else 0.7
 	player_phase = fmod(player_phase + delta * bob_speed, 1.0)
@@ -359,12 +426,120 @@ func _spawn_enemy_bullet(e: Dictionary) -> void:
 	enemy_bullets.append({"pos": pos, "vel": Vector2(dir * ENEMY_BULLET_SPEED, 0), "view": view})
 
 
+func _spawn_boss() -> void:
+	var side: int = 1 if randi() % 2 == 0 else -1
+	var sz: Vector2 = ENEMY_SIZE * 1.4
+	var x: float = (PLAY_W - sz.x) if side == 1 else 0.0
+	var view := EntitySprite.new()
+	view.size = sz
+	view.position = Vector2(x, GROUND_Y - sz.y)
+	view.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	view.setup("bandit", BOSS_COLOR, BANDIT_COLOR2, 999)
+	view.set_facing(0.0, side > 0)
+	play_area.add_child(view)
+	boss = {
+		"x": x, "size": sz, "state": "alive", "hp": BOSS_HITS + level / 2, "mode": "ranged",
+		"charge_timer": randf_range(2.2, 3.6), "shoot_timer": randf_range(0.8, 1.4),
+		"view": view, "phase": randf(), "flash_timer": 0.0,
+	}
+
+
+func _update_boss(delta: float) -> void:
+	if boss.is_empty():
+		return
+	var player_center: float = player_x + PLAYER_SIZE.x / 2.0
+	var boss_center: float = boss["x"] + boss["size"].x / 2.0
+	var dx: float = player_center - boss_center
+	var dir: float = sign(dx) if abs(dx) > 4.0 else 0.0
+	if dir != 0.0:
+		boss["view"].set_facing(0.0, dir < 0.0)
+
+	boss["charge_timer"] -= delta
+	if boss["mode"] == "ranged" and boss["charge_timer"] <= 0.0:
+		boss["mode"] = "charge"
+		boss["charge_timer"] = 0.9
+	elif boss["mode"] == "charge":
+		boss["x"] += dir * enemy_speed * 2.2 * delta
+		if abs(dx) < MELEE_RANGE * 1.3:
+			_lose_life()
+			boss["mode"] = "ranged"
+			boss["charge_timer"] = randf_range(2.2, 3.6)
+		elif boss["charge_timer"] <= 0.0:
+			boss["mode"] = "ranged"
+			boss["charge_timer"] = randf_range(2.2, 3.6)
+
+	if boss["mode"] == "ranged":
+		if abs(dx) > RANGED_STOP_DIST * 0.8:
+			boss["x"] += dir * enemy_speed * delta
+		boss["shoot_timer"] -= delta
+		if boss["shoot_timer"] <= 0.0:
+			boss["shoot_timer"] = randf_range(0.5, 0.9)
+			_spawn_boss_bullet()
+
+	boss["x"] = clamp(boss["x"], 0.0, PLAY_W - boss["size"].x)
+	if boss["flash_timer"] > 0.0:
+		boss["flash_timer"] -= delta
+		boss["view"].set_phase(0.6)
+	else:
+		boss["phase"] = fmod(float(boss["phase"]) + delta * 0.6, 1.0)
+		boss["view"].set_phase(boss["phase"])
+	boss["view"].position = Vector2(boss["x"], GROUND_Y - boss["size"].y)
+
+
+func _spawn_boss_bullet() -> void:
+	var player_center: float = player_x + PLAYER_SIZE.x / 2.0
+	var boss_center: float = boss["x"] + boss["size"].x / 2.0
+	var dir: float = sign(player_center - boss_center)
+	if dir == 0.0:
+		dir = 1.0
+	boss["flash_timer"] = HIT_FLASH_DURATION
+	var pos := Vector2(boss_center, GROUND_Y - boss["size"].y / 2.0)
+	var view := EntitySprite.new()
+	view.size = Vector2(10, 18)
+	view.position = pos
+	view.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	view.setup("bullet", BOSS_COLOR.lightened(0.3), Color(1, 1, 1))
+	view.set_facing(90.0 if dir > 0 else -90.0)
+	play_area.add_child(view)
+	enemy_bullets.append({"pos": pos, "vel": Vector2(dir * ENEMY_BULLET_SPEED * 1.1, 0), "view": view})
+
+
+func _spawn_weapon_drop(pos: Vector2) -> void:
+	var panel := PanelContainer.new()
+	panel.add_theme_stylebox_override("panel", UIKit.stylebox(UIKit.COLOR_ACCENT_2.darkened(0.5), UIKit.COLOR_ACCENT_2, 8, 2))
+	panel.size = Vector2(30, 30)
+	panel.position = pos - panel.size / 2.0
+	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var lbl := Label.new()
+	lbl.text = "🔫"
+	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	lbl.add_theme_font_size_override("font_size", 16)
+	panel.add_child(lbl)
+	play_area.add_child(panel)
+	weapon_drops.append({"pos": panel.position, "size": panel.size, "view": panel, "life": WEAPON_DURATION})
+
+
+func _update_weapon_drops(delta: float) -> void:
+	var player_rect := Rect2(player_x, GROUND_Y - PLAYER_SIZE.y, PLAYER_SIZE.x, PLAYER_SIZE.y)
+	for i in range(weapon_drops.size() - 1, -1, -1):
+		var w: Dictionary = weapon_drops[i]
+		w["life"] -= delta
+		if w["life"] <= 0.0 or Rect2(w["pos"], w["size"]).intersects(player_rect):
+			if w["life"] > 0.0:
+				weapon = "shotgun"
+				weapon_timer = WEAPON_DURATION
+				AudioManager.play_place()
+			w["view"].queue_free()
+			weapon_drops.remove_at(i)
+
+
 func _update_bullets(delta: float) -> void:
 	for i in range(bullets.size() - 1, -1, -1):
 		var b: Dictionary = bullets[i]
 		b["pos"] += b["vel"] * delta
 		b["view"].position = b["pos"]
-		if b["pos"].x < 0.0 or b["pos"].x > PLAY_W:
+		if b["pos"].x < 0.0 or b["pos"].x > PLAY_W or b["pos"].y < -40.0 or b["pos"].y > PLAY_H:
 			b["view"].queue_free()
 			bullets.remove_at(i)
 			continue
@@ -380,8 +555,22 @@ func _update_bullets(delta: float) -> void:
 				score += 100
 				kills += 1
 				_update_hud()
+				if randf() < WEAPON_DROP_CHANCE:
+					_spawn_weapon_drop(Vector2(e["x"] + ENEMY_SIZE.x / 2.0, GROUND_Y))
 				hit = true
 				break
+		if not hit and not boss.is_empty() and boss["state"] == "alive":
+			if bullet_rect.intersects(Rect2(boss["x"], GROUND_Y - boss["size"].y, boss["size"].x, boss["size"].y)):
+				_spawn_hit_flash(Vector2(boss["x"] + boss["size"].x / 2.0, GROUND_Y - boss["size"].y / 2.0))
+				boss["hp"] -= 1
+				boss["flash_timer"] = HIT_FLASH_DURATION
+				score += 20
+				if boss["hp"] <= 0:
+					score += 500
+					boss["view"].queue_free()
+					boss = {}
+				_update_hud()
+				hit = true
 		if hit:
 			b["view"].queue_free()
 			bullets.remove_at(i)
@@ -398,7 +587,7 @@ func _update_enemy_bullets(delta: float) -> void:
 			enemy_bullets.remove_at(i)
 			continue
 
-		if Rect2(b["pos"], Vector2(10, 8)).intersects(player_rect):
+		if jump_timer <= 0.0 and Rect2(b["pos"], Vector2(10, 8)).intersects(player_rect):
 			b["view"].queue_free()
 			enemy_bullets.remove_at(i)
 			_lose_life()
