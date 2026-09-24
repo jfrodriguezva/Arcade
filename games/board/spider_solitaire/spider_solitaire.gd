@@ -1,8 +1,8 @@
 extends Control
 ## Solitario Araña (Spider), variante de 1 palo (la más sencilla): 104
-## cartas de picas, 10 columnas. Igual que el Solitario Klondike de esta
-## colección, solo se puede tomar y mover la carta de hasta arriba de
-## cada columna (no arrastrar secuencias completas).
+## cartas de picas, 10 columnas. Se puede arrastrar tanto una carta suelta
+## como un grupo ordenado y consecutivo completo (p. ej. 8-7-6 del mismo
+## palo) de una sola vez, como en el Spider real.
 
 const GAME_ID := "spider_solitaire"
 const SUIT := "♠"
@@ -12,10 +12,9 @@ const NEEDED_STACKS := 8
 const HELP_TEXT := "Objetivo: formar 8 secuencias completas de Rey a As (mismo palo) para ganar.
 
 - Toca el mazo (arriba a la izquierda) para repartir una carta nueva a cada una de las 10 columnas (no puedes repartir si alguna columna está vacía).
-- Toca la carta de hasta arriba de una columna para seleccionarla (queda con borde amarillo).
-- Toca otra columna para moverla ahí, si su carta superior es exactamente un número más alta (por ejemplo, un 5 sobre un 6), o si esa columna está vacía.
-- Cuando completas una secuencia K,Q,J,10...A de arriba hacia abajo en una columna, se retira sola y suma a tu contador.
-- Solo se mueve la carta superior de cada pila (versión simplificada, sin arrastrar secuencias)."
+- Toca una carta boca arriba para seleccionarla (queda con borde amarillo) — si forma parte de una secuencia ordenada y consecutiva hasta la carta de hasta arriba, se selecciona el grupo completo, no solo una carta.
+- Toca otra columna para mover ahí la carta (o el grupo) seleccionado, si la carta superior de esa columna es exactamente un número más alta que la primera carta del grupo, o si esa columna está vacía.
+- Cuando completas una secuencia K,Q,J,10...A de arriba hacia abajo en una columna, se retira sola y suma a tu contador."
 
 var stock: Array = []
 var tableau: Array = []
@@ -153,32 +152,60 @@ func _redraw_all() -> void:
 			var placeholder := _make_card_button()
 			_render_empty(placeholder, "")
 			placeholder.position = Vector2.ZERO
-			placeholder.pressed.connect(_on_tableau_pressed.bind(col))
+			placeholder.pressed.connect(_on_tableau_pressed.bind(col, -1))
 			container.add_child(placeholder)
 			continue
+
+		# Cualquier carta boca arriba que forme parte del grupo ordenado y
+		# consecutivo que llega hasta la carta de hasta arriba se puede
+		# tocar para levantar ella y todo lo que tiene encima, no solo la
+		# última carta — así se pueden arrastrar secuencias completas.
+		var seq_start: int = _movable_sequence_start(pile)
+		var sel_col: int = selected.get("col", -1)
+		var sel_index: int = selected.get("index", -1)
 
 		for i in range(pile.size()):
 			var y := i * 24
 			var card: Dictionary = pile[i]
-			if i == pile.size() - 1:
+			var is_top: bool = i == pile.size() - 1
+			var movable: bool = card["up"] and i >= seq_start
+			var is_selected: bool = sel_col == col and sel_index >= 0 and i >= sel_index
+
+			if is_top:
 				var btn := _make_card_button()
-				var is_selected: bool = selected.get("col", -1) == col
 				btn.disabled = false
 				btn.set_card(card["rank"], card["suit"], true)
 				btn.set_highlighted(is_selected)
 				btn.position = Vector2(0, y)
-				btn.pressed.connect(_on_tableau_pressed.bind(col))
+				btn.pressed.connect(_on_tableau_pressed.bind(col, i))
 				container.add_child(btn)
 			else:
 				var strip := PlayingCard.new()
 				strip.custom_minimum_size = Vector2(64, 24)
-				strip.disabled = true
 				if card["up"]:
 					strip.set_card(card["rank"], card["suit"], true)
 				else:
 					strip.set_card(0, SUIT, false)
+				strip.set_highlighted(is_selected)
 				strip.position = Vector2(0, y)
+				if movable:
+					strip.disabled = false
+					strip.pressed.connect(_on_tableau_pressed.bind(col, i))
+				else:
+					strip.disabled = true
 				container.add_child(strip)
+
+
+func _movable_sequence_start(pile: Array) -> int:
+	## Índice más chico tal que pile[índice..fin] es una corrida boca-arriba
+	## ordenada y consecutiva hacia abajo (p. ej. 8,7,6) — el grupo completo
+	## que se puede levantar de un jalón desde la carta de hasta arriba.
+	if pile.is_empty():
+		return 0
+	var s: int = pile.size() - 1
+	while s > 0 and pile[s]["up"] and pile[s - 1]["up"] and pile[s - 1]["rank"] == pile[s]["rank"] + 1:
+		s -= 1
+	return s
 
 
 func _render_empty(card_view: PlayingCard, hint: String) -> void:
@@ -211,15 +238,15 @@ func _on_stock_pressed() -> void:
 	_check_win()
 
 
-func _on_tableau_pressed(col: int) -> void:
+func _on_tableau_pressed(col: int, index: int) -> void:
 	if game_over:
 		return
 	var pile: Array = tableau[col]
 
 	if selected.is_empty():
-		if pile.is_empty():
+		if index < 0:
 			return
-		selected = {"col": col}
+		selected = {"col": col, "index": index}
 		_redraw_all()
 		return
 
@@ -229,31 +256,36 @@ func _on_tableau_pressed(col: int) -> void:
 		_redraw_all()
 		return
 
+	var src_index: int = selected["index"]
 	var src_pile: Array = tableau[src_col]
-	if src_pile.is_empty():
+	if src_index >= src_pile.size():
 		selected = {}
 		_redraw_all()
 		return
-	var card: Dictionary = src_pile.back()
+	var lead_card: Dictionary = src_pile[src_index]
 
 	var can_place := false
 	if pile.is_empty():
 		can_place = true
 	else:
 		var top: Dictionary = pile.back()
-		can_place = top["rank"] == card["rank"] + 1
+		can_place = top["rank"] == lead_card["rank"] + 1
 
 	if can_place:
-		src_pile.pop_back()
+		# Se mueve el grupo completo desde src_index hasta el final,
+		# manteniendo el orden, no solo la carta de hasta arriba.
+		var moving: Array = src_pile.slice(src_index, src_pile.size())
+		src_pile.resize(src_index)
 		if not src_pile.is_empty() and not src_pile.back()["up"]:
 			src_pile.back()["up"] = true
-		tableau[col].append(card)
+		for c: Dictionary in moving:
+			tableau[col].append(c)
 		selected = {}
 		_check_completed(col)
 		_redraw_all()
 		_check_win()
-	elif not pile.is_empty():
-		selected = {"col": col}
+	elif index >= 0:
+		selected = {"col": col, "index": index}
 		_redraw_all()
 	else:
 		selected = {}
