@@ -9,17 +9,31 @@ const GAME_ID := "bomber_maze"
 const GRID_W := 13
 const GRID_H := 13
 const CELL := 50.0
-const MOVE_INTERVAL := 0.14
+const BASE_MOVE_INTERVAL := 0.14
+const MIN_MOVE_INTERVAL := 0.08
 const BOMB_FUSE := 2.0
-const BLAST_RADIUS := 2
+const BASE_BLAST_RADIUS := 2
+const MAX_BLAST_RADIUS := 5
+const MAX_BOMB_CAPACITY := 5
 const MAX_LEVEL := 10
+const ENEMY_TICK := 0.08
 const DIRS := [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]
+const POWERUP_CHANCE := 0.35
+const POWERUP_KINDS := ["bomb_up", "fire_up", "speed_up"]
+const POWERUP_ICON := {"bomb_up": "💣", "fire_up": "🔥", "speed_up": "👟"}
+const POWERUP_COLOR := {
+	"bomb_up": UIKit.COLOR_DANGER, "fire_up": UIKit.COLOR_ACCENT_3, "speed_up": UIKit.COLOR_ACCENT_2,
+}
 
 const HELP_TEXT := "Muévete con las flechas. Toca 💣 para colocar una bomba en tu celda.
 
-La bomba explota en cruz tras un par de segundos, destruyendo bloques claros (blandos) y a cualquiera atrapado en la explosión — incluido tú, así que aléjate a tiempo. Los pilares oscuros son indestructibles.
+La bomba explota en cruz tras un par de segundos, destruyendo bloques claros (blandos) y a cualquiera atrapado en la explosión — incluido tú, así que aléjate a tiempo. Los pilares oscuros son indestructibles. Si una explosión alcanza otra bomba ya colocada, la detona también, en cadena.
 
-Tocar a un enemigo también te quita una vida. Elimina a todos los enemigos del nivel (con las explosiones) para pasar al siguiente. Hay 10 niveles, cada uno con más enemigos. Pierdes si se acaban tus 3 vidas."
+Algunos bloques blandos esconden un power-up al destruirlos: 💣 más bombas a la vez, 🔥 más alcance de explosión, 👟 más velocidad. Se acumulan durante toda la partida.
+
+Uno de los bloques blandos esconde además la salida del nivel: después de eliminar a todos los enemigos, encuéntrala (destruyendo bloques) y camina sobre ella para pasar al siguiente nivel — si ya no quedan enemigos y no la has hallado, los bloques que podrían esconderla parpadean en dorado.
+
+Tocar a un enemigo también te quita una vida. Hay 10 niveles, cada uno con más enemigos. Pierdes si se acaban tus 3 vidas."
 
 var cell_type: Array = []
 var cell_views: Array = []
@@ -27,11 +41,20 @@ var cell_views: Array = []
 var player_cell: Vector2i = Vector2i.ZERO
 var current_dir: Vector2i = Vector2i.ZERO
 var move_timer: float = 0.0
+var enemy_tick_timer: float = 0.0
 
 var bombs: Array = []
-var bomb_active: bool = false
+var powerups: Array = []
 
 var enemies: Array = []
+
+var bomb_capacity: int = 1
+var blast_radius: int = BASE_BLAST_RADIUS
+var move_interval: float = BASE_MOVE_INTERVAL
+
+var door_cell: Vector2i = Vector2i(-1, -1)
+var door_revealed: bool = false
+var door_hint_shown: bool = false
 
 var score: int = 0
 var lives: int = 3
@@ -43,6 +66,7 @@ var player_view: EntitySprite
 var score_label: Label
 var lives_label: Label
 var level_label: Label
+var powerup_label: Label
 var status_label: Label
 var bomb_btn: Button
 var anim_time: float = 0.0
@@ -92,6 +116,8 @@ func _build_ui() -> void:
 	hud.add_child(lives_label)
 	level_label = UIKit.title_label("Nivel 1/%d" % MAX_LEVEL, 16, UIKit.COLOR_ACCENT_2)
 	hud.add_child(level_label)
+	powerup_label = UIKit.title_label("💣1 🔥2 👟0", 14, UIKit.COLOR_TEXT_DIM)
+	hud.add_child(powerup_label)
 
 	status_label = UIKit.title_label("", 15, UIKit.COLOR_TEXT_DIM)
 	vbox.add_child(status_label)
@@ -208,6 +234,9 @@ func _new_game() -> void:
 	score = 0
 	lives = 3
 	level = 1
+	bomb_capacity = 1
+	blast_radius = BASE_BLAST_RADIUS
+	move_interval = BASE_MOVE_INTERVAL
 	state = "playing"
 	_setup_level()
 
@@ -222,12 +251,18 @@ func _generate_grid() -> void:
 			row.append("wall" if (is_border or is_pillar) else "empty")
 		cell_type.append(row)
 
+	var soft_cells: Array = []
 	for y in range(1, GRID_H - 1):
 		for x in range(1, GRID_W - 1):
 			if cell_type[y][x] != "empty" or _near_spawn(x, y):
 				continue
 			if randf() < 0.55:
 				cell_type[y][x] = "soft"
+				soft_cells.append(Vector2i(x, y))
+
+	door_cell = soft_cells[randi() % soft_cells.size()] if not soft_cells.is_empty() else Vector2i(-1, -1)
+	door_revealed = false
+	door_hint_shown = false
 
 
 func _near_spawn(x: int, y: int) -> bool:
@@ -249,7 +284,9 @@ func _setup_level() -> void:
 	for b: Dictionary in bombs:
 		b["view"].queue_free()
 	bombs.clear()
-	bomb_active = false
+	for p: Dictionary in powerups:
+		p["view"].queue_free()
+	powerups.clear()
 	if bomb_btn:
 		bomb_btn.disabled = false
 
@@ -299,6 +336,14 @@ func _style_cell(y: int, x: int) -> void:
 			border = UIKit.COLOR_ACCENT_2.darkened(0.35)
 			radius = 6
 			border_w = 2
+			if door_hint_shown and Vector2i(x, y) == door_cell:
+				border = UIKit.COLOR_ACCENT_3
+				border_w = 3
+		"door":
+			color = UIKit.COLOR_ACCENT_3.lerp(UIKit.COLOR_BG_LIGHT, 0.35)
+			border = UIKit.COLOR_ACCENT_3
+			radius = 8
+			border_w = 3
 		_:
 			# piso a cuadros para que la zona caminable se lea como tablero
 			color = UIKit.COLOR_BG_LIGHT if (x + y) % 2 == 0 else UIKit.COLOR_BG_LIGHT.darkened(0.05)
@@ -312,21 +357,24 @@ func _update_hud() -> void:
 		hearts += "❤" if i < lives else "♡"
 	lives_label.text = hearts
 	level_label.text = "Nivel %d/%d" % [level, MAX_LEVEL]
+	powerup_label.text = "💣%d 🔥%d 👟%d" % [bomb_capacity, blast_radius, roundi((BASE_MOVE_INTERVAL - move_interval) / 0.02)]
 
 
 func _is_walkable(p: Vector2i) -> bool:
 	if p.x < 0 or p.x >= GRID_W or p.y < 0 or p.y >= GRID_H:
 		return false
-	return cell_type[p.y][p.x] == "empty"
+	return cell_type[p.y][p.x] == "empty" or cell_type[p.y][p.x] == "door"
 
 
 func _on_bomb_pressed() -> void:
-	if state != "playing" or bomb_active:
+	if state != "playing" or bombs.size() >= bomb_capacity:
 		return
 	if cell_type[player_cell.y][player_cell.x] != "empty":
 		return
-	bomb_active = true
-	if bomb_btn:
+	for b: Dictionary in bombs:
+		if b["cell"] == player_cell:
+			return
+	if bombs.size() + 1 >= bomb_capacity and bomb_btn:
 		bomb_btn.disabled = true
 	var view := EntitySprite.new()
 	view.size = Vector2(CELL * 0.72, CELL * 0.72)
@@ -347,20 +395,41 @@ func _process(delta: float) -> void:
 		if e["state"] == "alive":
 			e["view"].set_phase(anim_time * 0.9 + e["phase_offset"])
 
+	# El jugador avanza según `move_interval` (se acorta con el power-up de
+	# velocidad); los enemigos usan su propio tick fijo, independiente de
+	# las mejoras del jugador, para no acelerarse con ellas por accidente.
 	move_timer += delta
-	if move_timer >= MOVE_INTERVAL:
+	if move_timer >= move_interval:
 		move_timer = 0.0
 		if current_dir != Vector2i.ZERO:
 			_try_move_player()
+
+	enemy_tick_timer += delta
+	if enemy_tick_timer >= ENEMY_TICK:
+		enemy_tick_timer = 0.0
 		for e: Dictionary in enemies:
 			if e["state"] == "alive":
-				_update_enemy(e, MOVE_INTERVAL)
+				_update_enemy(e, ENEMY_TICK)
 
 	_update_bombs(delta)
 	_check_enemy_touch()
 
 	if state == "playing" and _all_enemies_cleared():
-		_advance_level()
+		if not door_revealed and not door_hint_shown:
+			_show_door_hint()
+		elif door_revealed and player_cell == door_cell:
+			_advance_level()
+
+
+func _show_door_hint() -> void:
+	## Todos los enemigos muertos y la puerta aún no aparece: los bloques
+	## blandos restantes (donde podría estar escondida) brillan en dorado,
+	## para que encontrarla en móvil no dependa de memorizar el mapa.
+	door_hint_shown = true
+	for y in range(GRID_H):
+		for x in range(GRID_W):
+			if cell_type[y][x] == "soft":
+				_style_cell(y, x)
 
 
 func _try_move_player() -> void:
@@ -371,6 +440,26 @@ func _try_move_player() -> void:
 		return
 	player_cell = next
 	player_view.position = _cell_pos(next, player_view.size)
+	_try_collect_powerup(next)
+
+
+func _try_collect_powerup(cell: Vector2i) -> void:
+	for i in range(powerups.size() - 1, -1, -1):
+		var p: Dictionary = powerups[i]
+		if p["cell"] != cell:
+			continue
+		match p["kind"]:
+			"bomb_up":
+				bomb_capacity = min(bomb_capacity + 1, MAX_BOMB_CAPACITY)
+			"fire_up":
+				blast_radius = min(blast_radius + 1, MAX_BLAST_RADIUS)
+			"speed_up":
+				move_interval = max(MIN_MOVE_INTERVAL, move_interval - 0.02)
+		AudioManager.play_place()
+		p["view"].queue_free()
+		powerups.remove_at(i)
+		_update_hud()
+		return
 
 
 func _update_enemy(e: Dictionary, delta: float) -> void:
@@ -401,9 +490,8 @@ func _update_bombs(delta: float) -> void:
 		if b["timer"] <= 0.0:
 			_explode_bomb(b)
 			bombs.remove_at(i)
-			bomb_active = false
 			if bomb_btn:
-				bomb_btn.disabled = false
+				bomb_btn.disabled = bombs.size() >= bomb_capacity
 
 
 func _explode_bomb(b: Dictionary) -> void:
@@ -431,12 +519,14 @@ func _spawn_blast(cells: Array) -> void:
 
 func _apply_explosion(cell: Vector2i) -> Array:
 	## Calcula las celdas afectadas por la explosión (se detiene en paredes,
-	## destruye como máximo un bloque blando por dirección) y aplica el
-	## daño a jugador/enemigos. Separado de _explode_bomb para poder probar
-	## la lógica sin disparar la animación visual (UIKit.pulse).
+	## destruye como máximo un bloque blando por dirección), revela la
+	## puerta o suelta un power-up al destruir el bloque que los escondía,
+	## detona en cadena cualquier otra bomba alcanzada, y aplica el daño a
+	## jugador/enemigos. Separado de _explode_bomb (que además dispara el
+	## efecto visual) para poder probar la lógica sin UIKit.pulse.
 	var affected: Array = [cell]
 	for d: Vector2i in DIRS:
-		for r in range(1, BLAST_RADIUS + 1):
+		for r in range(1, blast_radius + 1):
 			var p: Vector2i = cell + d * r
 			if p.x < 0 or p.x >= GRID_W or p.y < 0 or p.y >= GRID_H:
 				break
@@ -444,7 +534,13 @@ func _apply_explosion(cell: Vector2i) -> Array:
 				break
 			affected.append(p)
 			if cell_type[p.y][p.x] == "soft":
-				cell_type[p.y][p.x] = "empty"
+				if p == door_cell:
+					cell_type[p.y][p.x] = "door"
+					door_revealed = true
+				else:
+					cell_type[p.y][p.x] = "empty"
+					if randf() < POWERUP_CHANCE:
+						_spawn_powerup(p)
 				_style_cell(p.y, p.x)
 				break
 
@@ -457,8 +553,28 @@ func _apply_explosion(cell: Vector2i) -> Array:
 				e["view"].visible = false
 				score += 100
 				_update_hud()
+		for other_b: Dictionary in bombs:
+			if other_b["cell"] == p and other_b["timer"] > 0.0:
+				other_b["timer"] = 0.0  # reacción en cadena: detona en el próximo tick
 
 	return affected
+
+
+func _spawn_powerup(cell: Vector2i) -> void:
+	var kind: String = POWERUP_KINDS[randi() % POWERUP_KINDS.size()]
+	var panel := PanelContainer.new()
+	panel.add_theme_stylebox_override("panel", UIKit.stylebox(POWERUP_COLOR[kind].darkened(0.55), POWERUP_COLOR[kind], 8, 2))
+	panel.size = Vector2(CELL * 0.62, CELL * 0.62)
+	panel.position = _cell_pos(cell, panel.size)
+	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var lbl := Label.new()
+	lbl.text = POWERUP_ICON[kind]
+	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	lbl.add_theme_font_size_override("font_size", 18)
+	panel.add_child(lbl)
+	play_area.add_child(panel)
+	powerups.append({"cell": cell, "kind": kind, "view": panel})
 
 
 func _check_enemy_touch() -> void:
