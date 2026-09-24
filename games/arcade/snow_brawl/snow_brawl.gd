@@ -18,13 +18,22 @@ const ENEMY_SIZE := Vector2(26, 32)
 const PLAYER_VIEW_SIZE := Vector2(46, 46)
 const ENEMY_VIEW_SIZE := Vector2(40, 40)
 const PROJECTILE_VIEW_SIZE := Vector2(16, 16)
-const SNOW_SPEED := 480.0
+const SNOW_SPEED := 380.0
+const SNOW_ARC_GRAVITY := 260.0  # el aliento de nieve cae un poco, no es una linea recta
+const SNOW_RANGE := 320.0        # se disipa a esta distancia, no cruza toda la pantalla
 const SNOW_COOLDOWN := 0.35
-const FREEZE_HITS := 3
+const FREEZE_HITS := 2
 const SNOWBALL_SPEED := 320.0
 const SNOWBALL_MAX_DIST := 460.0
 const MAX_LEVEL := 10
 const FREEZE_DURATION := 6.0  # si no pateas al enemigo a tiempo, se descongela
+const AGGRO_RANGE := 160.0
+const AGGRO_SPEED_MULT := 1.7
+const MOVE_ACCEL := 1600.0  # aceleracion/frenado horizontal, ya no es un cambio instantaneo de velocidad
+const LANDING_SQUASH := 0.22
+const ENEMY_COLORS := [
+	UIKit.COLOR_DANGER, Color(0.85, 0.47, 0.16), Color(0.56, 0.30, 0.78), Color(0.20, 0.55, 0.80),
+]
 const ITEM_DROP_CHANCE := 0.4
 const ITEM_LIFETIME := 8.0
 const ITEM_VIEW_SIZE := Vector2(26, 26)
@@ -247,16 +256,17 @@ func _setup_level() -> void:
 	for i in range(count):
 		var plat: Rect2 = PLATFORMS[1 + (randi() % (PLATFORMS.size() - 1))]
 		var pos := Vector2(plat.position.x + randf() * max(1.0, plat.size.x - ENEMY_SIZE.x), plat.position.y - ENEMY_SIZE.y)
+		var base_color: Color = ENEMY_COLORS[i % ENEMY_COLORS.size()]
 		var view := EntitySprite.new()
 		view.size = ENEMY_VIEW_SIZE
 		view.position = _enemy_view_pos(pos)
 		view.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		view.setup("snow_enemy", UIKit.COLOR_DANGER)
+		view.setup("snow_enemy", base_color)
 		play_area.add_child(view)
 		enemies.append({
 			"pos": pos, "platform": plat, "dir": (1 if randi() % 2 == 0 else -1),
-			"speed": speed, "state": "walking", "hits": 0, "vel": Vector2.ZERO,
-			"start_x": 0.0, "view": view, "phase": fmod(float(i) * 0.31, 1.0),
+			"speed": speed, "base_speed": speed, "state": "walking", "hits": 0, "vel": Vector2.ZERO,
+			"start_x": 0.0, "view": view, "phase": fmod(float(i) * 0.31, 1.0), "base_color": base_color,
 		})
 
 	status_label.text = "Nivel %d / %d" % [level, MAX_LEVEL]
@@ -277,6 +287,15 @@ func _sync_player_view() -> void:
 	)
 	player_view.set_facing(0.0, facing < 0)
 	player_view.set_phase(player_phase)
+
+
+func _play_landing_squash() -> void:
+	## Aplaste breve y no-bloqueante al aterrizar, para que el salto se
+	## sienta con más peso/impacto en vez de solo detenerse en seco.
+	player_view.pivot_offset = player_view.size * Vector2(0.5, 1.0)
+	player_view.scale = Vector2(1.0 + LANDING_SQUASH, 1.0 - LANDING_SQUASH)
+	var tw := create_tween()
+	tw.tween_property(player_view, "scale", Vector2.ONE, 0.16).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 
 
 func _enemy_view_pos(pos: Vector2) -> Vector2:
@@ -301,10 +320,16 @@ func _on_shoot_pressed() -> void:
 	var view := EntitySprite.new()
 	view.size = PROJECTILE_VIEW_SIZE
 	view.position = pos - Vector2(2.0, 2.0)
+	view.pivot_offset = view.size / 2.0
 	view.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	view.setup("snowball", Color.WHITE)
 	play_area.add_child(view)
-	projectiles.append({"pos": pos, "vel": Vector2(facing * SNOW_SPEED, 0), "view": view})
+	# Aliento de nieve: sale con un empujoncito hacia arriba y cae un poco
+	# (SNOW_ARC_GRAVITY), en vez de viajar en línea recta perfecta — y se
+	# disipa a los SNOW_RANGE px en vez de cruzar toda la pantalla.
+	projectiles.append({
+		"pos": pos, "vel": Vector2(facing * SNOW_SPEED, -70.0), "view": view, "start_pos": pos,
+	})
 
 
 func _process(delta: float) -> void:
@@ -325,18 +350,22 @@ func _process(delta: float) -> void:
 
 func _update_player(delta: float) -> void:
 	player_vel.y += GRAVITY * delta
+
+	# Aceleración/frenado suave en vez de fijar la velocidad de golpe: se
+	# siente menos rígido al arrancar y al parar.
+	var target_vx := 0.0
 	if moving_left and not moving_right:
-		player_vel.x = -MOVE_SPEED
+		target_vx = -MOVE_SPEED
 		facing = -1
 	elif moving_right and not moving_left:
-		player_vel.x = MOVE_SPEED
+		target_vx = MOVE_SPEED
 		facing = 1
-	else:
-		player_vel.x = 0.0
+	player_vel.x = move_toward(player_vel.x, target_vx, MOVE_ACCEL * delta)
 
-	if player_vel.x != 0.0:
+	if absf(player_vel.x) > 4.0:
 		player_phase = fmod(player_phase + delta * 2.6, 1.0)
 
+	var was_airborne: bool = not on_ground
 	var prev_bottom: float = player_pos.y + PLAYER_SIZE.y
 	player_pos += player_vel * delta
 	player_pos.x = clamp(player_pos.x, 0.0, PLAY_W - PLAYER_SIZE.x)
@@ -350,6 +379,8 @@ func _update_player(delta: float) -> void:
 				player_pos.y = p.position.y - PLAYER_SIZE.y
 				player_vel.y = 0.0
 				on_ground = true
+				if was_airborne:
+					_play_landing_squash()
 				break
 
 	_sync_player_view()
@@ -392,7 +423,8 @@ func _thaw_enemy(e: Dictionary) -> void:
 	## vuelve a caminar (y a ser peligroso), como en el Snow Bros original.
 	e["state"] = "walking"
 	e["hits"] = 0
-	e["view"].setup("snow_enemy", UIKit.COLOR_DANGER)
+	e["speed"] = e["base_speed"]
+	e["view"].setup("snow_enemy", e["base_color"])
 
 
 func _effective_freeze_hits() -> int:
@@ -401,14 +433,26 @@ func _effective_freeze_hits() -> int:
 
 func _update_walking_enemy(e: Dictionary, delta: float) -> void:
 	var plat: Rect2 = e["platform"]
-	e["pos"].x += e["dir"] * e["speed"] * delta
+
+	# IA ligera: si el jugador está en la misma plataforma y cerca, el
+	# enemigo se voltea hacia él y acelera, en vez de solo patrullar de
+	# lado a lado ignorándolo por completo.
+	var same_platform: bool = player_pos.y + PLAYER_SIZE.y > plat.position.y - 6.0 \
+		and player_pos.y + PLAYER_SIZE.y < plat.position.y + 26.0
+	var dx: float = (player_pos.x + PLAYER_SIZE.x / 2.0) - (e["pos"].x + ENEMY_SIZE.x / 2.0)
+	var aggro: bool = same_platform and absf(dx) <= AGGRO_RANGE
+	var speed_now: float = e["speed"] * (AGGRO_SPEED_MULT if aggro else 1.0)
+	if aggro and absf(dx) > 2.0:
+		e["dir"] = 1 if dx > 0.0 else -1
+
+	e["pos"].x += e["dir"] * speed_now * delta
 	if e["pos"].x < plat.position.x:
 		e["pos"].x = plat.position.x
 		e["dir"] = 1
 	elif e["pos"].x + ENEMY_SIZE.x > plat.position.x + plat.size.x:
 		e["pos"].x = plat.position.x + plat.size.x - ENEMY_SIZE.x
 		e["dir"] = -1
-	e["phase"] = fmod(float(e["phase"]) + delta * 3.0, 1.0)
+	e["phase"] = fmod(float(e["phase"]) + delta * (4.4 if aggro else 3.0), 1.0)
 	e["view"].position = _enemy_view_pos(e["pos"])
 	e["view"].set_facing(0.0, e["dir"] < 0)
 	e["view"].set_phase(e["phase"])
@@ -442,10 +486,16 @@ func _remove_enemy(e: Dictionary) -> void:
 func _update_projectiles(delta: float) -> void:
 	for i in range(projectiles.size() - 1, -1, -1):
 		var p: Dictionary = projectiles[i]
+		p["vel"].y += SNOW_ARC_GRAVITY * delta
 		p["pos"] += p["vel"] * delta
 		p["view"].position = p["pos"] - Vector2(2.0, 2.0)
 
-		if p["pos"].x < 0.0 or p["pos"].x > PLAY_W:
+		var traveled: float = p["pos"].distance_to(p["start_pos"])
+		var range_t: float = clamp(traveled / SNOW_RANGE, 0.0, 1.0)
+		p["view"].scale = Vector2.ONE * lerp(0.85, 1.5, range_t)
+		p["view"].modulate.a = 1.0 - range_t * range_t
+
+		if p["pos"].x < 0.0 or p["pos"].x > PLAY_W or traveled >= SNOW_RANGE:
 			p["view"].queue_free()
 			projectiles.remove_at(i)
 			continue
@@ -458,16 +508,17 @@ func _update_projectiles(delta: float) -> void:
 			if proj_rect.intersects(Rect2(e["pos"], ENEMY_SIZE)):
 				e["hits"] += 1
 				var needed: int = _effective_freeze_hits()
+				var t: float = float(e["hits"]) / float(needed)
+				# Cada golpe lo frena, no solo lo tiñe: se nota que se está
+				# congelando de verdad, hasta casi detenerse justo antes de
+				# quedar completamente congelado.
+				e["speed"] = e["base_speed"] * clamp(1.0 - t * 0.85, 0.15, 1.0)
 				if e["hits"] >= needed:
 					e["state"] = "frozen"
 					e["frozen_timer"] = FREEZE_DURATION
 					e["view"].setup("snow_enemy", UIKit.COLOR_ACCENT_2)
 				else:
-					# Aún no queda congelado del todo: se va poniendo blanco
-					# progresivamente con cada golpe, para que se note que
-					# ya casi está listo para empujarlo.
-					var t: float = float(e["hits"]) / float(needed)
-					var frost: Color = UIKit.COLOR_DANGER.lerp(UIKit.COLOR_ACCENT_2, t * 0.75)
+					var frost: Color = e["base_color"].lerp(UIKit.COLOR_ACCENT_2, t * 0.75)
 					e["view"].setup("snow_enemy", frost)
 				hit = true
 				break
