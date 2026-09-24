@@ -8,7 +8,7 @@ const GAME_ID := "snow_brawl"
 const PLAY_W := 640.0
 const PLAY_H := 880.0
 const GRAVITY := 1400.0
-const JUMP_VELOCITY := -620.0
+const JUMP_VELOCITY := -740.0
 const MOVE_SPEED := 220.0
 const PLAYER_SIZE := Vector2(28, 40)
 const ENEMY_SIZE := Vector2(26, 32)
@@ -457,10 +457,18 @@ func _update_projectiles(delta: float) -> void:
 				continue
 			if proj_rect.intersects(Rect2(e["pos"], ENEMY_SIZE)):
 				e["hits"] += 1
-				if e["hits"] >= _effective_freeze_hits():
+				var needed: int = _effective_freeze_hits()
+				if e["hits"] >= needed:
 					e["state"] = "frozen"
 					e["frozen_timer"] = FREEZE_DURATION
 					e["view"].setup("snow_enemy", UIKit.COLOR_ACCENT_2)
+				else:
+					# Aún no queda congelado del todo: se va poniendo blanco
+					# progresivamente con cada golpe, para que se note que
+					# ya casi está listo para empujarlo.
+					var t: float = float(e["hits"]) / float(needed)
+					var frost: Color = UIKit.COLOR_DANGER.lerp(UIKit.COLOR_ACCENT_2, t * 0.75)
+					e["view"].setup("snow_enemy", frost)
 				hit = true
 				break
 		if hit:
