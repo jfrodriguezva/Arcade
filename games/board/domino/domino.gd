@@ -27,9 +27,13 @@ var current_turn: String = "player"
 var mode: String = "pve"
 var game_over: bool = false
 
-const TABLE_W := 640.0
-const TILE_W := 64.0
-const TILE_H := 88.0
+const TABLE_W := 660.0
+## Ficha normal: acostada a lo largo de la cadena (más ancha que alta).
+## Ficha doble: girada 90°, cruzada sobre la cadena (más alta que ancha) —
+## así se acomodan en la mesa como en la realidad, no como fichas de pie
+## todas iguales.
+const TILE_LONG := 104.0
+const TILE_SHORT := 52.0
 const TILE_GAP := 5.0
 
 var status_label: Label
@@ -81,7 +85,7 @@ func _build_ui() -> void:
 	vbox.add_child(UIKit.title_label("Mesa", 14, UIKit.COLOR_TEXT_DIM))
 
 	var chain_panel := PanelContainer.new()
-	chain_panel.custom_minimum_size = Vector2(0, 260)
+	chain_panel.custom_minimum_size = Vector2(0, 340)
 	chain_panel.add_theme_stylebox_override("panel", UIKit.stylebox(UIKit.COLOR_PANEL, UIKit.COLOR_ACCENT_3, 14, 2))
 	vbox.add_child(chain_panel)
 	var chain_margin := MarginContainer.new()
@@ -91,7 +95,7 @@ func _build_ui() -> void:
 	chain_scroll = ScrollContainer.new()
 	chain_margin.add_child(chain_scroll)
 	chain_canvas = Control.new()
-	chain_canvas.custom_minimum_size = Vector2(TABLE_W, TILE_H + 20)
+	chain_canvas.custom_minimum_size = Vector2(TABLE_W, TILE_LONG + 20)
 	chain_scroll.add_child(chain_canvas)
 
 	var ends_row := HBoxContainer.new()
@@ -233,36 +237,46 @@ func _redraw_chain_table() -> void:
 		child.queue_free()
 
 	if chain.is_empty():
-		chain_canvas.custom_minimum_size = Vector2(TABLE_W, TILE_H + 20)
+		chain_canvas.custom_minimum_size = Vector2(TABLE_W, TILE_LONG + 20)
 		var empty_lbl := UIKit.title_label("(vacío, coloca la primera ficha)", 14, UIKit.COLOR_TEXT_DIM)
 		empty_lbl.position = Vector2(10, 10)
 		chain_canvas.add_child(empty_lbl)
 		return
 
-	var cols_per_row: int = max(1, int(TABLE_W / (TILE_W + TILE_GAP)))
+	# Acomodo real: las fichas normales van acostadas en fila; las dobles
+	# van giradas 90° cruzando la cadena, como se ponen en una mesa de
+	# verdad. La fila avanza por ancho acumulado (no por conteo de fichas,
+	# ya que las dobles ocupan menos "a lo largo" de la cadena) y dobla en
+	# serpiente cuando ya no cabe una ficha más.
 	var row := 0
-	var col := 0
+	var cursor_x := 0.0
 	var direction := 1
 
 	for tile: Dictionary in chain:
-		var t := DominoTile.new()
-		t.custom_minimum_size = Vector2(TILE_W, TILE_H)
-		t.size = Vector2(TILE_W, TILE_H)
-		t.disabled = true
-		t.set_values(tile["a"], tile["b"], tile["a"] == tile["b"])
+		var is_double: bool = tile["a"] == tile["b"]
+		var tw: float = TILE_SHORT if is_double else TILE_LONG
+		var th: float = TILE_LONG if is_double else TILE_SHORT
 
-		var display_col: int = col if direction == 1 else (cols_per_row - 1 - col)
-		t.position = Vector2(display_col * (TILE_W + TILE_GAP), row * (TILE_H + TILE_GAP))
-		chain_canvas.add_child(t)
-
-		col += 1
-		if col >= cols_per_row:
-			col = 0
+		if cursor_x > 0.0 and cursor_x + tw > TABLE_W:
+			cursor_x = 0.0
 			row += 1
 			direction *= -1
 
+		var t := DominoTile.new()
+		t.custom_minimum_size = Vector2(tw, th)
+		t.size = Vector2(tw, th)
+		t.disabled = true
+		t.set_values(tile["a"], tile["b"], is_double)
+
+		var display_x: float = cursor_x if direction == 1 else (TABLE_W - cursor_x - tw)
+		var y_offset: float = (TILE_LONG - th) / 2.0
+		t.position = Vector2(display_x, row * (TILE_LONG + TILE_GAP) + y_offset)
+		chain_canvas.add_child(t)
+
+		cursor_x += tw + TILE_GAP
+
 	var total_rows: int = row + 1
-	chain_canvas.custom_minimum_size = Vector2(TABLE_W, total_rows * (TILE_H + TILE_GAP) + 10)
+	chain_canvas.custom_minimum_size = Vector2(TABLE_W, total_rows * (TILE_LONG + TILE_GAP) + 10)
 
 
 func _has_valid_move(hand: Array) -> bool:

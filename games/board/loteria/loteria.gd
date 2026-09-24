@@ -57,6 +57,7 @@ var game_over: bool = false
 
 var status_label: Label
 var call_label: Label
+var call_icon_label: Label
 var info_label: Label
 var call_btn: Button
 var boards_container: VBoxContainer
@@ -102,8 +103,14 @@ func _build_ui() -> void:
 	for side: String in ["margin_left", "margin_right", "margin_top", "margin_bottom"]:
 		call_margin.add_theme_constant_override(side, 14)
 	call_panel.add_child(call_margin)
-	call_label = UIKit.title_label("—", 42, UIKit.COLOR_ACCENT_3)
-	call_margin.add_child(call_label)
+	var call_vbox := VBoxContainer.new()
+	call_vbox.alignment = BoxContainer.ALIGNMENT_CENTER
+	call_vbox.add_theme_constant_override("separation", 2)
+	call_margin.add_child(call_vbox)
+	call_icon_label = UIKit.title_label("🃏", 72, UIKit.COLOR_ACCENT_3)
+	call_vbox.add_child(call_icon_label)
+	call_label = UIKit.title_label("—", 20, UIKit.COLOR_ACCENT_3)
+	call_vbox.add_child(call_label)
 
 	call_btn = Button.new()
 	call_btn.text = "🔔  Cantar siguiente"
@@ -156,17 +163,41 @@ func _build_board_panel(owner: String, accent: Color) -> PanelContainer:
 	grid.add_theme_constant_override("v_separation", 4)
 	m.add_child(grid)
 
-	var card_size: Vector2 = Vector2(150, 110) if mode == "pve" else Vector2(140, 100)
+	var card_size: Vector2 = Vector2(150, 118) if mode == "pve" else Vector2(140, 108)
+	var icon_size: int = 46 if mode == "pve" else 42
 	var list: Array = []
 	for i in range(16):
 		var btn := Button.new()
 		btn.custom_minimum_size = card_size
-		btn.add_theme_font_size_override("font_size", 14)
-		btn.autowrap_mode = TextServer.AUTOWRAP_WORD
+		btn.text = ""
 		UIKit.style_button(btn, UIKit.COLOR_BG_LIGHT, 8)
 		btn.pressed.connect(_on_card_pressed.bind(owner, i))
+
+		# El ícono va en su propio Label grande, separado del nombre (antes
+		# compartían una sola línea de texto pequeño dentro del botón, lo
+		# que hacía ilegible el ícono).
+		var content := VBoxContainer.new()
+		content.alignment = BoxContainer.ALIGNMENT_CENTER
+		content.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		content.set_anchors_preset(Control.PRESET_FULL_RECT)
+		content.add_theme_constant_override("separation", 2)
+		btn.add_child(content)
+
+		var icon_lbl := Label.new()
+		icon_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		icon_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		icon_lbl.add_theme_font_size_override("font_size", icon_size)
+		content.add_child(icon_lbl)
+
+		var name_lbl := Label.new()
+		name_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		name_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		name_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD
+		name_lbl.add_theme_font_size_override("font_size", 12)
+		content.add_child(name_lbl)
+
 		grid.add_child(btn)
-		list.append(btn)
+		list.append({"btn": btn, "icon": icon_lbl, "name": name_lbl})
 	board_buttons[owner] = list
 	return panel
 
@@ -197,7 +228,8 @@ func _new_game() -> void:
 
 
 func _redraw_all() -> void:
-	call_label.text = "%s\n%s" % [ICONS.get(current_call, "🃏"), current_call] if current_call != "" else "—"
+	call_icon_label.text = ICONS.get(current_call, "🃏") if current_call != "" else "🃏"
+	call_label.text = current_call if current_call != "" else "—"
 	call_btn.disabled = game_over or call_index >= call_order.size()
 
 	if mode == "pve":
@@ -215,12 +247,17 @@ func _redraw_all() -> void:
 
 func _redraw_board(owner: String) -> void:
 	for i in range(16):
-		var btn: Button = board_buttons[owner][i]
+		var entry: Dictionary = board_buttons[owner][i]
+		var btn: Button = entry["btn"]
+		var icon_lbl: Label = entry["icon"]
+		var name_lbl: Label = entry["name"]
 		var name: String = boards[owner][i]
-		btn.text = "%s\n%s" % [ICONS.get(name, "🃏"), name]
+		icon_lbl.text = ICONS.get(name, "🃏")
+		name_lbl.text = name
+		var font_color: Color = UIKit.COLOR_BG if marked[owner][i] else UIKit.COLOR_TEXT
+		name_lbl.add_theme_color_override("font_color", font_color)
 		if marked[owner][i]:
 			UIKit.style_button(btn, UIKit.COLOR_ACCENT_3, 8)
-			btn.add_theme_color_override("font_color", UIKit.COLOR_BG)
 		elif called_set.has(name):
 			UIKit.style_button(btn, UIKit.COLOR_ACCENT, 8)
 		else:
