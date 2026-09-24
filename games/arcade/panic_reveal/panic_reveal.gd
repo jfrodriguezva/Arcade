@@ -13,6 +13,7 @@ const GAME_ID := "panic_reveal"
 const GRID_W := 20
 const GRID_H := 27
 const CELL := 34.0
+const DRAG_DEADZONE := 12.0  # tan cerca del marcador que no se distingue direccion
 const MOVE_INTERVAL := 0.09
 const CAPTURE_TARGET := 75.0
 const MAX_LEVEL := 10
@@ -33,7 +34,7 @@ const MONSTER_STAGES := [
 	{"shape": "critter", "color": Color(0.55, 0.05, 0.10), "color2": Color(1.0, 0.6, 0.2), "scale": 1.3, "speed_mult": 1.8},
 ]
 
-const HELP_TEXT := "Tu marcador empieza en el borde (zona segura). Usa las flechas para moverte — mantén presionadas dos a la vez (como ▲ y ▶) para moverte en diagonal, en las 8 direcciones.
+const HELP_TEXT := "Toca y arrastra en cualquier parte del tablero: el marcador se mueve hacia donde esté tu dedo, en las 8 direcciones, igual que con el joystick del arcade original — todo el display es el control, no hay botones aparte.
 
 - Mientras estés en el borde o en zona ya capturada, estás a salvo... de los enemigos rojos. Desde el nivel 3 patrullan el borde exterior unos centinelas violeta (Sparx): si te tocan, aunque estés en zona 'segura', pierdes una vida igual.
 - Al entrar a la zona sin revelar, vas dejando una traza. Si un enemigo toca tu traza antes de que regreses al borde, pierdes una vida y la traza se borra — ojo, esto puede pasar contigo mismo si te acorralas.
@@ -49,13 +50,11 @@ var cell_views: Array = []
 
 var player_cell: Vector2i = Vector2i.ZERO
 var current_dir: Vector2i = Vector2i.ZERO
-## Cada flecha se sostiene de forma independiente; combinando dos no
-## opuestas (p. ej. arriba + derecha) se obtienen las 8 direcciones, en
-## vez de solo las 4 ortogonales.
-var held_up: bool = false
-var held_down: bool = false
-var held_left: bool = false
-var held_right: bool = false
+## Control tipo joystick sobre todo el tablero: mientras el dedo está
+## abajo, la dirección es la del vector desde el marcador hacia el
+## punto tocado, redondeada a una de 8 direcciones — no hay botones de
+## flechas aparte, el display completo es el control.
+var dragging: bool = false
 var move_timer: float = 0.0
 ## El marcador (y los enemigos) ya no "saltan" de celda en celda: cada
 ## paso se interpola suavemente entre la posición anterior y la nueva a
@@ -156,10 +155,15 @@ func _build_ui() -> void:
 	play_panel.add_theme_stylebox_override("panel", UIKit.stylebox(UIKit.COLOR_PANEL, UIKit.COLOR_ACCENT_3, 10, 2))
 	vbox.add_child(play_panel)
 
+	# El tablero completo ES el control: se toca y arrastra directamente
+	# sobre él para mover el marcador (ver _on_play_area_input), como el
+	# joystick del arcade original — por eso ya no hay un d-pad aparte
+	# quitándole espacio a la pantalla.
 	play_area = Control.new()
 	play_area.custom_minimum_size = Vector2(GRID_W * CELL, GRID_H * CELL)
 	play_area.clip_contents = true
-	play_area.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	play_area.mouse_filter = Control.MOUSE_FILTER_STOP
+	play_area.gui_input.connect(_on_play_area_input)
 	play_panel.add_child(play_area)
 
 	for y in range(GRID_H):
@@ -179,80 +183,56 @@ func _build_ui() -> void:
 	player_view.setup("cursor_drone", UIKit.COLOR_TEXT, UIKit.COLOR_ACCENT_2)
 	play_area.add_child(player_view)
 
-	# --- Clúster de d-pad agrupado visualmente en un panel, con botones más
-	# grandes para mejor puntería táctil en móvil.
-	var dpad_panel := PanelContainer.new()
-	dpad_panel.add_theme_stylebox_override("panel", UIKit.stylebox(UIKit.COLOR_PANEL, UIKit.COLOR_ACCENT_2, 16, 1))
-	vbox.add_child(dpad_panel)
-
-	var dpad_margin := MarginContainer.new()
-	for side: String in ["margin_left", "margin_right", "margin_top", "margin_bottom"]:
-		dpad_margin.add_theme_constant_override(side, 10)
-	dpad_panel.add_child(dpad_margin)
-
-	var dpad_vbox := VBoxContainer.new()
-	dpad_vbox.alignment = BoxContainer.ALIGNMENT_CENTER
-	dpad_vbox.add_theme_constant_override("separation", 6)
-	dpad_margin.add_child(dpad_vbox)
-
-	var dpad_row1 := HBoxContainer.new()
-	dpad_row1.alignment = BoxContainer.ALIGNMENT_CENTER
-	dpad_vbox.add_child(dpad_row1)
-	var up_btn := _make_dir_button("▲")
-	up_btn.button_down.connect(func() -> void: held_up = true; _update_dir())
-	up_btn.button_up.connect(func() -> void: held_up = false; _update_dir())
-	dpad_row1.add_child(up_btn)
-
-	var dpad_row2 := HBoxContainer.new()
-	dpad_row2.alignment = BoxContainer.ALIGNMENT_CENTER
-	dpad_row2.add_theme_constant_override("separation", 68)
-	dpad_vbox.add_child(dpad_row2)
-	var left_btn := _make_dir_button("◀")
-	left_btn.button_down.connect(func() -> void: held_left = true; _update_dir())
-	left_btn.button_up.connect(func() -> void: held_left = false; _update_dir())
-	dpad_row2.add_child(left_btn)
-	var right_btn := _make_dir_button("▶")
-	right_btn.button_down.connect(func() -> void: held_right = true; _update_dir())
-	right_btn.button_up.connect(func() -> void: held_right = false; _update_dir())
-	dpad_row2.add_child(right_btn)
-
-	var dpad_row3 := HBoxContainer.new()
-	dpad_row3.alignment = BoxContainer.ALIGNMENT_CENTER
-	dpad_vbox.add_child(dpad_row3)
-	var down_btn := _make_dir_button("▼")
-	down_btn.button_down.connect(func() -> void: held_down = true; _update_dir())
-	down_btn.button_up.connect(func() -> void: held_down = false; _update_dir())
-	dpad_row3.add_child(down_btn)
-
 	var restart_btn := Button.new()
 	restart_btn.text = "↻  Nueva partida"
-	restart_btn.custom_minimum_size = Vector2(200, 46)
+	restart_btn.custom_minimum_size = Vector2(200, 40)
 	UIKit.style_button(restart_btn, UIKit.COLOR_ACCENT_3)
 	restart_btn.pressed.connect(_new_game)
 	vbox.add_child(restart_btn)
 
 
-func _make_dir_button(label: String) -> Button:
-	var btn := Button.new()
-	btn.text = label
-	btn.custom_minimum_size = Vector2(76, 64)
-	btn.add_theme_font_size_override("font_size", 24)
-	UIKit.style_button(btn, UIKit.COLOR_ACCENT_2)
-	return btn
+func _direction_from_vector(v: Vector2) -> Vector2i:
+	if v.length() < DRAG_DEADZONE:
+		return Vector2i.ZERO
+	const OCTANTS := [
+		Vector2i(1, 0), Vector2i(1, 1), Vector2i(0, 1), Vector2i(-1, 1),
+		Vector2i(-1, 0), Vector2i(-1, -1), Vector2i(0, -1), Vector2i(1, -1),
+	]
+	var octant: int = int(round(v.angle() / (PI / 4.0)))
+	octant = ((octant % 8) + 8) % 8
+	return OCTANTS[octant]
 
 
-func _update_dir() -> void:
-	var dx := 0
-	var dy := 0
-	if held_left and not held_right:
-		dx = -1
-	elif held_right and not held_left:
-		dx = 1
-	if held_up and not held_down:
-		dy = -1
-	elif held_down and not held_up:
-		dy = 1
-	current_dir = Vector2i(dx, dy)
+func _on_play_area_input(event: InputEvent) -> void:
+	if state != "playing":
+		return
+
+	var pos: Vector2
+	var active: bool
+
+	if event is InputEventScreenTouch:
+		dragging = event.pressed
+		active = dragging
+		pos = event.position
+	elif event is InputEventScreenDrag:
+		active = dragging
+		pos = event.position
+	elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+		dragging = event.pressed
+		active = dragging
+		pos = event.position
+	elif event is InputEventMouseMotion:
+		active = dragging
+		pos = event.position
+	else:
+		return
+
+	if not active:
+		current_dir = Vector2i.ZERO
+		return
+
+	var player_center: Vector2 = player_view.position + player_view.size / 2.0
+	current_dir = _direction_from_vector(pos - player_center)
 
 
 func _landscape_color(gx: int, gy: int, lvl: int) -> Color:
@@ -295,7 +275,8 @@ func _setup_level() -> void:
 		target_colors.append(color_row)
 
 	player_cell = Vector2i(0, 0)
-	_update_dir()
+	current_dir = Vector2i.ZERO
+	dragging = false
 	move_timer = 0.0
 	player_prev_pos = Vector2.ZERO
 	player_target_pos = Vector2.ZERO
@@ -616,7 +597,8 @@ func _lose_life() -> void:
 		grid_state[c.y][c.x] = "open"
 	trail.clear()
 	player_cell = Vector2i(0, 0)
-	_update_dir()
+	current_dir = Vector2i.ZERO
+	dragging = false
 	move_timer = 0.0
 	# Reinicio instantáneo (no un planeo desde donde murió): tanto el punto
 	# de partida como el de llegada de la interpolación quedan en el origen.
