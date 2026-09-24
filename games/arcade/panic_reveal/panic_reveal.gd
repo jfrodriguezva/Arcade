@@ -24,12 +24,21 @@ const LEVEL_TIME_BASE := 75.0
 const LEVEL_TIME_MIN := 42.0
 const SPARX_MIN_LEVEL := 3
 const SPARX_SPEED := 6.0  # celdas de borde por segundo
+const DIAGONAL_FACTOR := 1.41421356  # sqrt(2): un paso diagonal recorre más distancia real,
+	# así que tarda lo mismo por segundo (no "más rápido") que uno recto, igual que en el
+	# arcade original donde el marcador se mueve a velocidad constante en cualquier dirección.
+const MONSTER_STAGES := [
+	{"shape": "alien", "color": UIKit.COLOR_DANGER, "color2": UIKit.COLOR_ACCENT_3, "scale": 0.88, "speed_mult": 1.0},
+	{"shape": "sentry", "color": Color(0.85, 0.20, 0.20), "color2": UIKit.COLOR_ACCENT_3, "scale": 1.05, "speed_mult": 1.35},
+	{"shape": "critter", "color": Color(0.55, 0.05, 0.10), "color2": Color(1.0, 0.6, 0.2), "scale": 1.3, "speed_mult": 1.8},
+]
 
-const HELP_TEXT := "Tu marcador empieza en el borde (zona segura). Usa las flechas para moverte.
+const HELP_TEXT := "Tu marcador empieza en el borde (zona segura). Usa las flechas para moverte — mantén presionadas dos a la vez (como ▲ y ▶) para moverte en diagonal, en las 8 direcciones.
 
 - Mientras estés en el borde o en zona ya capturada, estás a salvo... de los enemigos rojos. Desde el nivel 3 patrullan el borde exterior unos centinelas violeta (Sparx): si te tocan, aunque estés en zona 'segura', pierdes una vida igual.
-- Al entrar a la zona sin revelar, vas dejando una traza. Si un enemigo rojo toca tu traza antes de que regreses al borde, pierdes una vida y la traza se borra.
-- Al volver a tocar zona segura, el área que encerraste se captura y revela el paisaje de abajo — a menos que haya un enemigo adentro, ese pedazo se queda sin capturar. Entre más grande el área capturada de una vez, más puntos.
+- Al entrar a la zona sin revelar, vas dejando una traza. Si un enemigo toca tu traza antes de que regreses al borde, pierdes una vida y la traza se borra — ojo, esto puede pasar contigo mismo si te acorralas.
+- Uno de los enemigos se vuelve más monstruoso y rápido mientras más tiempo pase en el nivel (se nota en su tamaño y color) — no te tardes.
+- Al volver a tocar zona segura, el área que encerraste se revela como si se corriera una cortina y se captura — a menos que haya un enemigo adentro, ese pedazo se queda sin capturar. Entre más grande el área capturada de una vez, más puntos.
 - Hay un límite de tiempo por nivel (arriba a la derecha). Si se agota, pierdes una vida y se reinicia el reloj.
 
 Captura el 75% del área para pasar de nivel. Hay 10 niveles, cada uno con más enemigos, más rápidos y menos tiempo. Pierdes si se acaban tus 3 vidas."
@@ -40,6 +49,13 @@ var cell_views: Array = []
 
 var player_cell: Vector2i = Vector2i.ZERO
 var current_dir: Vector2i = Vector2i.ZERO
+## Cada flecha se sostiene de forma independiente; combinando dos no
+## opuestas (p. ej. arriba + derecha) se obtienen las 8 direcciones, en
+## vez de solo las 4 ortogonales.
+var held_up: bool = false
+var held_down: bool = false
+var held_left: bool = false
+var held_right: bool = false
 var move_timer: float = 0.0
 ## El marcador (y los enemigos) ya no "saltan" de celda en celda: cada
 ## paso se interpola suavemente entre la posición anterior y la nueva a
@@ -183,8 +199,8 @@ func _build_ui() -> void:
 	dpad_row1.alignment = BoxContainer.ALIGNMENT_CENTER
 	dpad_vbox.add_child(dpad_row1)
 	var up_btn := _make_dir_button("▲")
-	up_btn.button_down.connect(func() -> void: _set_dir(Vector2i(0, -1)))
-	up_btn.button_up.connect(func() -> void: _clear_dir(Vector2i(0, -1)))
+	up_btn.button_down.connect(func() -> void: held_up = true; _update_dir())
+	up_btn.button_up.connect(func() -> void: held_up = false; _update_dir())
 	dpad_row1.add_child(up_btn)
 
 	var dpad_row2 := HBoxContainer.new()
@@ -192,20 +208,20 @@ func _build_ui() -> void:
 	dpad_row2.add_theme_constant_override("separation", 68)
 	dpad_vbox.add_child(dpad_row2)
 	var left_btn := _make_dir_button("◀")
-	left_btn.button_down.connect(func() -> void: _set_dir(Vector2i(-1, 0)))
-	left_btn.button_up.connect(func() -> void: _clear_dir(Vector2i(-1, 0)))
+	left_btn.button_down.connect(func() -> void: held_left = true; _update_dir())
+	left_btn.button_up.connect(func() -> void: held_left = false; _update_dir())
 	dpad_row2.add_child(left_btn)
 	var right_btn := _make_dir_button("▶")
-	right_btn.button_down.connect(func() -> void: _set_dir(Vector2i(1, 0)))
-	right_btn.button_up.connect(func() -> void: _clear_dir(Vector2i(1, 0)))
+	right_btn.button_down.connect(func() -> void: held_right = true; _update_dir())
+	right_btn.button_up.connect(func() -> void: held_right = false; _update_dir())
 	dpad_row2.add_child(right_btn)
 
 	var dpad_row3 := HBoxContainer.new()
 	dpad_row3.alignment = BoxContainer.ALIGNMENT_CENTER
 	dpad_vbox.add_child(dpad_row3)
 	var down_btn := _make_dir_button("▼")
-	down_btn.button_down.connect(func() -> void: _set_dir(Vector2i(0, 1)))
-	down_btn.button_up.connect(func() -> void: _clear_dir(Vector2i(0, 1)))
+	down_btn.button_down.connect(func() -> void: held_down = true; _update_dir())
+	down_btn.button_up.connect(func() -> void: held_down = false; _update_dir())
 	dpad_row3.add_child(down_btn)
 
 	var restart_btn := Button.new()
@@ -225,13 +241,18 @@ func _make_dir_button(label: String) -> Button:
 	return btn
 
 
-func _set_dir(d: Vector2i) -> void:
-	current_dir = d
-
-
-func _clear_dir(d: Vector2i) -> void:
-	if current_dir == d:
-		current_dir = Vector2i.ZERO
+func _update_dir() -> void:
+	var dx := 0
+	var dy := 0
+	if held_left and not held_right:
+		dx = -1
+	elif held_right and not held_left:
+		dx = 1
+	if held_up and not held_down:
+		dy = -1
+	elif held_down and not held_up:
+		dy = 1
+	current_dir = Vector2i(dx, dy)
 
 
 func _landscape_color(gx: int, gy: int, lvl: int) -> Color:
@@ -274,7 +295,7 @@ func _setup_level() -> void:
 		target_colors.append(color_row)
 
 	player_cell = Vector2i(0, 0)
-	current_dir = Vector2i.ZERO
+	_update_dir()
 	move_timer = 0.0
 	player_prev_pos = Vector2.ZERO
 	player_target_pos = Vector2.ZERO
@@ -303,6 +324,10 @@ func _setup_level() -> void:
 			"kind": "qix", "pos": pos, "dir": start_dir, "view": view,
 			"interval": enemy_interval, "timer": 0.0, "phase": randf(),
 			"prev_pixel": pix, "target_pixel": pix,
+			# Solo el primer "qix" del nivel se vuelve un monstruo con el
+			# tiempo — que todos escalen a la vez sería demasiado, y en el
+			# arcade original es un único enemigo el que se transforma.
+			"is_lead": i == 0, "monster_stage": 0, "base_interval": enemy_interval,
 		})
 
 	# Sparx: centinelas que patrullan el borde exterior desde el nivel 3 —
@@ -339,6 +364,33 @@ func _setup_level() -> void:
 
 func _level_time_limit() -> float:
 	return max(LEVEL_TIME_MIN, LEVEL_TIME_BASE - (level - 1) * 3.5)
+
+
+func _update_monster_evolution() -> void:
+	## Uno de los enemigos se pone más grande, rojo y rápido mientras más
+	## tiempo pase en el nivel, como el temporizador que "convierte a
+	## monstruo" del arcade original — presión extra por no tardarse.
+	var limit: float = _level_time_limit()
+	if limit <= 0.0:
+		return
+	var elapsed_ratio: float = 1.0 - clamp(time_left / limit, 0.0, 1.0)
+	var stage := 0
+	if elapsed_ratio >= 0.75:
+		stage = 2
+	elif elapsed_ratio >= 0.4:
+		stage = 1
+	for e: Dictionary in enemies:
+		if e.get("is_lead", false) and e["monster_stage"] != stage:
+			_evolve_monster(e, stage)
+
+
+func _evolve_monster(e: Dictionary, stage: int) -> void:
+	e["monster_stage"] = stage
+	var s: Dictionary = MONSTER_STAGES[stage]
+	var sz: float = CELL * 0.88 * float(s["scale"])
+	e["view"].size = Vector2(sz, sz)
+	e["view"].setup(s["shape"], s["color"], s["color2"], e["view"].seed_i)
+	e["interval"] = float(e["base_interval"]) / float(s["speed_mult"])
 
 
 func _build_perimeter() -> void:
@@ -387,15 +439,18 @@ func _process(delta: float) -> void:
 		_time_out()
 		return
 
+	_update_monster_evolution()
+
 	move_timer += delta
-	if move_timer >= MOVE_INTERVAL:
+	var tick_interval: float = MOVE_INTERVAL * (DIAGONAL_FACTOR if (current_dir.x != 0 and current_dir.y != 0) else 1.0)
+	if move_timer >= tick_interval:
 		move_timer = 0.0
 		player_prev_pos = Vector2(player_cell) * CELL
 		if current_dir != Vector2i.ZERO:
 			_try_move_player()
 		player_target_pos = Vector2(player_cell) * CELL
 	if state == "playing":
-		var pt: float = clamp(move_timer / MOVE_INTERVAL, 0.0, 1.0)
+		var pt: float = clamp(move_timer / tick_interval, 0.0, 1.0)
 		player_view.position = player_prev_pos.lerp(player_target_pos, pt)
 
 	# El marcador gira más rápido mientras traza una línea activa (peligro),
@@ -468,23 +523,23 @@ func _complete_capture() -> void:
 		if e["kind"] == "qix":
 			_flood_fill_from(e["pos"], reachable)
 
-	var newly_captured := 0
+	var newly_cells: Array = []
 	for y in range(GRID_H):
 		for x in range(GRID_W):
 			var key := Vector2i(x, y)
 			if grid_state[y][x] == "trail":
 				grid_state[y][x] = "captured"
-				newly_captured += 1
+				newly_cells.append(key)
 			elif grid_state[y][x] == "open" and not reachable.has(key):
 				grid_state[y][x] = "captured"
-				newly_captured += 1
+				newly_cells.append(key)
 
 	trail.clear()
-	_redraw_grid()
+	_curtain_reveal(newly_cells)
 	# Puntaje proporcional al área encerrada de una sola vez (como el
 	# arcade original: capturas grandes valen mucho más que ir celda a
 	# celda), con un pequeño extra fijo por cerrar el trazo.
-	score += 20 + newly_captured * 2
+	score += 20 + newly_cells.size() * 2
 	_update_hud()
 
 	if _capture_percent() >= CAPTURE_TARGET:
@@ -561,7 +616,7 @@ func _lose_life() -> void:
 		grid_state[c.y][c.x] = "open"
 	trail.clear()
 	player_cell = Vector2i(0, 0)
-	current_dir = Vector2i.ZERO
+	_update_dir()
 	move_timer = 0.0
 	# Reinicio instantáneo (no un planeo desde donde murió): tanto el punto
 	# de partida como el de llegada de la interpolación quedan en el origen.
@@ -600,6 +655,34 @@ func _record_result(won: bool) -> void:
 	stats[key] = stats.get(key, 0) + 1
 	stats["best_score"] = max(stats.get("best_score", 0), score)
 	SaveManager.set_game_data(GAME_ID, stats)
+
+
+func _curtain_reveal(cells: Array) -> void:
+	## En vez de que el área capturada aparezca de golpe, se cubre con un
+	## tono oscuro sólido ("cortina" cerrada) y luego se barre de izquierda
+	## a derecha revelando el color real celda por celda, como si se
+	## corriera una cortina — más parecido al reveal del Gals Panic real
+	## que un cambio de color instantáneo.
+	if cells.is_empty():
+		return
+	cells.sort_custom(func(a: Vector2i, b: Vector2i) -> bool: return a.x < b.x if a.x != b.x else a.y < b.y)
+
+	var curtain_color := Color(0.05, 0.05, 0.08)
+	for c: Vector2i in cells:
+		var view: Panel = cell_views[c.y][c.x]
+		view.add_theme_stylebox_override("panel", UIKit.stylebox(curtain_color, Color(0, 0, 0, 0), 1))
+
+	var n: int = cells.size()
+	var duration: float = clamp(0.15 + n * 0.006, 0.2, 0.9)
+	var tw := create_tween()
+	tw.tween_method(_reveal_sweep_step.bind(cells), 0.0, 1.0, duration)
+
+
+func _reveal_sweep_step(t: float, cells: Array) -> void:
+	var target: int = int(ceil(t * cells.size()))
+	for i in range(target):
+		var c: Vector2i = cells[i]
+		_style_cell(c.y, c.x)
 
 
 func _redraw_grid() -> void:
