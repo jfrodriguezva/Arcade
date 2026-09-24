@@ -19,25 +19,50 @@ const SPEED_PER_LEVEL := 20.0
 const MAX_BOUNCE_VX := 380.0
 const MAX_LEVEL := 10
 
+const CAPSULE_DROP_CHANCE := 0.18
+const CAPSULE_SIZE := Vector2(38, 20)
+const CAPSULE_FALL_SPEED := 150.0
+const POWERUP_DURATION := 12.0
+const LASER_COOLDOWN := 0.4
+const PADDLE_EXPAND_MULT := 1.6
+const PADDLE_SHRINK_MULT := 0.62
+const SLOW_MULT := 0.62
+const CAPSULE_WEIGHTS := {"expand": 24, "shrink": 14, "slow": 16, "multiball": 20, "laser": 16, "life": 10}
+const CAPSULE_LETTER := {"expand": "E", "shrink": "S", "slow": "◐", "multiball": "M", "laser": "L", "life": "❤"}
+const CAPSULE_COLOR := {
+	"expand": UIKit.COLOR_ACCENT_2, "shrink": UIKit.COLOR_DANGER, "slow": UIKit.COLOR_TEXT_DIM,
+	"multiball": UIKit.COLOR_ACCENT_3, "laser": UIKit.COLOR_ACCENT, "life": Color(1.0, 0.478, 0.706),
+}
+
 const HELP_TEXT := "Arrastra el dedo (o el mouse) horizontalmente sobre el área de juego para mover la paleta.
 
 Toca la pantalla para lanzar la bola. Rebota la bola para romper todos los ladrillos sin dejarla caer — el punto donde golpea la paleta cambia el ángulo del rebote.
 
+Al romper ladrillos a veces cae una cápsula: atrápala con la paleta.
+E = paleta más grande · S = paleta más chica (¡evítala!) · ◐ = bola más lenta · M = bola extra (multibola) · L = láser automático que rompe ladrillos desde la paleta · ❤ = vida extra.
+
 Hay 10 niveles: cada uno tiene más filas de ladrillos, la bola es más rápida, y desde el nivel 4 aparecen ladrillos resistentes (necesitan 2 golpes, se ven más claros tras el primero).
 
-Pierdes una vida si la bola cae debajo de la paleta. Ganas si completas los 10 niveles; pierdes si se acaban tus 3 vidas."
+Pierdes una vida si TODAS tus bolas caen debajo de la paleta. Ganas si completas los 10 niveles; pierdes si se acaban tus 3 vidas."
 
-var ball_pos: Vector2 = Vector2.ZERO
-var ball_vel: Vector2 = Vector2.ZERO
+var balls: Array = []  # cada bola: {"pos":Vector2,"vel":Vector2,"view":EntitySprite}
 var score: int = 0
 var lives: int = 3
 var level: int = 1
 var state: String = "ready" # ready | playing | game_over | won
 var bricks: Array = []
 
+var paddle_w: float = PADDLE_W
+var capsules: Array = []
+var laser_bolts: Array = []
+var expand_timer: float = 0.0
+var shrink_timer: float = 0.0
+var slow_timer: float = 0.0
+var laser_timer: float = 0.0
+var laser_fire_cooldown: float = 0.0
+
 var play_area: Control
 var paddle: EntitySprite
-var ball_view: EntitySprite
 var score_label: Label
 var lives_label: Label
 var status_label: Label
@@ -105,16 +130,10 @@ func _build_ui() -> void:
 	play_panel.add_child(play_area)
 
 	paddle = EntitySprite.new()
-	paddle.size = Vector2(PADDLE_W, PADDLE_H)
+	paddle.size = Vector2(paddle_w, PADDLE_H)
 	paddle.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	paddle.setup("paddle", UIKit.COLOR_ACCENT_2, UIKit.COLOR_ACCENT_3)
 	play_area.add_child(paddle)
-
-	ball_view = EntitySprite.new()
-	ball_view.size = Vector2(BALL_VISUAL_SIZE, BALL_VISUAL_SIZE)
-	ball_view.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	ball_view.setup("ball", UIKit.COLOR_ACCENT_3)
-	play_area.add_child(ball_view)
 
 	var restart_btn := Button.new()
 	restart_btn.text = "↻  Nueva partida"
@@ -224,19 +243,54 @@ func _update_hud() -> void:
 	lives_label.text = "Vidas: %d" % lives
 
 
-func _sync_ball_view() -> void:
+func _sync_ball_view(b: Dictionary) -> void:
 	## El nodo visual de la bola es un poco más grande que su caja de colisión
 	## (BALL_SIZE) para lucir mejor con el sombreado de EntitySprite; se centra
 	## sobre la posición/caja real que usa la física.
 	var pad: float = (BALL_VISUAL_SIZE - BALL_SIZE) / 2.0
-	ball_view.position = ball_pos - Vector2(pad, pad)
+	b["view"].position = b["pos"] - Vector2(pad, pad)
+
+
+func _spawn_ball(pos: Vector2, vel: Vector2) -> Dictionary:
+	var view := EntitySprite.new()
+	view.size = Vector2(BALL_VISUAL_SIZE, BALL_VISUAL_SIZE)
+	view.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	view.setup("ball", UIKit.COLOR_ACCENT_3)
+	play_area.add_child(view)
+	var b: Dictionary = {"pos": pos, "vel": vel, "view": view}
+	_sync_ball_view(b)
+	balls.append(b)
+	return b
+
+
+func _clear_balls() -> void:
+	for b: Dictionary in balls:
+		b["view"].queue_free()
+	balls.clear()
+
+
+func _set_paddle_width(w: float) -> void:
+	paddle_w = w
+	var center: float = paddle.position.x + paddle.size.x / 2.0
+	paddle.size = Vector2(paddle_w, PADDLE_H)
+	paddle.position.x = clamp(center - paddle_w / 2.0, 0.0, PLAY_W - paddle_w)
 
 
 func _reset_ball() -> void:
-	paddle.position = Vector2((PLAY_W - PADDLE_W) / 2.0, PLAY_H - 40.0)
-	ball_pos = Vector2(paddle.position.x + PADDLE_W / 2.0 - BALL_SIZE / 2.0, paddle.position.y - BALL_SIZE - 2.0)
-	ball_vel = Vector2.ZERO
-	_sync_ball_view()
+	_clear_balls()
+	for c: Dictionary in capsules:
+		c["view"].queue_free()
+	capsules.clear()
+	for l: Dictionary in laser_bolts:
+		l["view"].queue_free()
+	laser_bolts.clear()
+	expand_timer = 0.0
+	shrink_timer = 0.0
+	slow_timer = 0.0
+	laser_timer = 0.0
+	_set_paddle_width(PADDLE_W)
+	paddle.position = Vector2((PLAY_W - paddle_w) / 2.0, PLAY_H - 40.0)
+	_spawn_ball(Vector2(paddle.position.x + paddle_w / 2.0 - BALL_SIZE / 2.0, paddle.position.y - BALL_SIZE - 2.0), Vector2.ZERO)
 	status_label.text = "Toca el área de juego para lanzar la bola"
 
 
@@ -259,73 +313,213 @@ func _on_play_area_input(event: InputEvent) -> void:
 	if state == "ready":
 		state = "playing"
 		var speed: float = _ball_speed_for_level(level)
-		ball_vel = Vector2(speed * 0.5, -speed)
+		balls[0]["vel"] = Vector2(speed * 0.5, -speed)
 		status_label.text = ""
 
 
 func _move_paddle_to(x: float) -> void:
-	paddle.position.x = clamp(x - PADDLE_W / 2.0, 0.0, PLAY_W - PADDLE_W)
+	paddle.position.x = clamp(x - paddle_w / 2.0, 0.0, PLAY_W - paddle_w)
 
 
 func _process(delta: float) -> void:
 	if state != "playing":
 		return
 
-	ball_pos += ball_vel * delta
+	if expand_timer > 0.0:
+		expand_timer -= delta
+		if expand_timer <= 0.0 and shrink_timer <= 0.0:
+			_set_paddle_width(PADDLE_W)
+	if shrink_timer > 0.0:
+		shrink_timer -= delta
+		if shrink_timer <= 0.0 and expand_timer <= 0.0:
+			_set_paddle_width(PADDLE_W)
+	if slow_timer > 0.0:
+		slow_timer -= delta
+	if laser_timer > 0.0:
+		laser_timer -= delta
+	_update_laser(delta)
 
-	if ball_pos.x <= 0.0:
-		ball_pos.x = 0.0
-		ball_vel.x = abs(ball_vel.x)
-	elif ball_pos.x + BALL_SIZE >= PLAY_W:
-		ball_pos.x = PLAY_W - BALL_SIZE
-		ball_vel.x = -abs(ball_vel.x)
+	var speed_mult: float = SLOW_MULT if slow_timer > 0.0 else 1.0
+	var paddle_rect := Rect2(paddle.position, Vector2(paddle_w, PADDLE_H))
 
-	if ball_pos.y <= 0.0:
-		ball_pos.y = 0.0
-		ball_vel.y = abs(ball_vel.y)
+	for i in range(balls.size() - 1, -1, -1):
+		var b: Dictionary = balls[i]
+		b["pos"] += b["vel"] * speed_mult * delta
 
-	var ball_rect := Rect2(ball_pos, Vector2(BALL_SIZE, BALL_SIZE))
-	var paddle_rect := Rect2(paddle.position, Vector2(PADDLE_W, PADDLE_H))
+		if b["pos"].x <= 0.0:
+			b["pos"].x = 0.0
+			b["vel"].x = abs(b["vel"].x)
+		elif b["pos"].x + BALL_SIZE >= PLAY_W:
+			b["pos"].x = PLAY_W - BALL_SIZE
+			b["vel"].x = -abs(b["vel"].x)
+		if b["pos"].y <= 0.0:
+			b["pos"].y = 0.0
+			b["vel"].y = abs(b["vel"].y)
 
-	if ball_vel.y > 0.0 and ball_rect.intersects(paddle_rect):
-		var hit_pos: float = ((ball_pos.x + BALL_SIZE / 2.0) - (paddle.position.x + PADDLE_W / 2.0)) / (PADDLE_W / 2.0)
-		hit_pos = clamp(hit_pos, -1.0, 1.0)
-		var speed: float = _ball_speed_for_level(level)
-		ball_vel.x = hit_pos * MAX_BOUNCE_VX
-		ball_vel.y = -speed
-		ball_pos.y = paddle.position.y - BALL_SIZE - 1.0
+		var ball_rect := Rect2(b["pos"], Vector2(BALL_SIZE, BALL_SIZE))
+		if b["vel"].y > 0.0 and ball_rect.intersects(paddle_rect):
+			var hit_pos: float = ((b["pos"].x + BALL_SIZE / 2.0) - (paddle.position.x + paddle_w / 2.0)) / (paddle_w / 2.0)
+			hit_pos = clamp(hit_pos, -1.0, 1.0)
+			var speed: float = _ball_speed_for_level(level)
+			b["vel"].x = hit_pos * MAX_BOUNCE_VX
+			b["vel"].y = -speed
+			b["pos"].y = paddle.position.y - BALL_SIZE - 1.0
 
-	for b: Dictionary in bricks:
-		if not b["alive"]:
-			continue
-		var brick_rect: Rect2 = b["rect"]
-		if ball_rect.intersects(brick_rect):
-			b["hits"] -= 1
-			if b["hits"] <= 0:
-				b["alive"] = false
-				b["view"].visible = false
-				score += 10
-			else:
-				score += 5
-				_style_brick(b["view"], b["highlight"], b["base_color"], b["tough"], true)
-			_update_hud()
+		_check_ball_bricks(b)
+		_sync_ball_view(b)
 
-			var overlap_x: float = min(ball_rect.end.x, brick_rect.end.x) - max(ball_rect.position.x, brick_rect.position.x)
-			var overlap_y: float = min(ball_rect.end.y, brick_rect.end.y) - max(ball_rect.position.y, brick_rect.position.y)
-			if overlap_x < overlap_y:
-				ball_vel.x = -ball_vel.x
-			else:
-				ball_vel.y = -ball_vel.y
-			break
+		if b["pos"].y > PLAY_H:
+			b["view"].queue_free()
+			balls.remove_at(i)
 
-	_sync_ball_view()
+	_update_capsules(delta)
 
-	if ball_pos.y > PLAY_H:
+	if balls.is_empty():
 		_lose_life()
 		return
 
 	if _all_bricks_cleared():
 		_advance_level()
+
+
+func _check_ball_bricks(b: Dictionary) -> void:
+	var ball_rect := Rect2(b["pos"], Vector2(BALL_SIZE, BALL_SIZE))
+	for brick: Dictionary in bricks:
+		if not brick["alive"]:
+			continue
+		var brick_rect: Rect2 = brick["rect"]
+		if not ball_rect.intersects(brick_rect):
+			continue
+		_damage_brick(brick)
+		var overlap_x: float = min(ball_rect.end.x, brick_rect.end.x) - max(ball_rect.position.x, brick_rect.position.x)
+		var overlap_y: float = min(ball_rect.end.y, brick_rect.end.y) - max(ball_rect.position.y, brick_rect.position.y)
+		if overlap_x < overlap_y:
+			b["vel"].x = -b["vel"].x
+		else:
+			b["vel"].y = -b["vel"].y
+		break
+
+
+func _damage_brick(brick: Dictionary) -> void:
+	brick["hits"] -= 1
+	if brick["hits"] <= 0:
+		brick["alive"] = false
+		brick["view"].visible = false
+		score += 10
+		if randf() < CAPSULE_DROP_CHANCE:
+			var r: Rect2 = brick["rect"]
+			_spawn_capsule(Vector2(r.position.x + r.size.x / 2.0, r.position.y + r.size.y / 2.0))
+	else:
+		score += 5
+		_style_brick(brick["view"], brick["highlight"], brick["base_color"], brick["tough"], true)
+	_update_hud()
+
+
+func _roll_capsule_kind() -> String:
+	var total := 0
+	for w: int in CAPSULE_WEIGHTS.values():
+		total += w
+	var r: int = randi() % total
+	var acc := 0
+	for kind: String in CAPSULE_WEIGHTS.keys():
+		acc += CAPSULE_WEIGHTS[kind]
+		if r < acc:
+			return kind
+	return "expand"
+
+
+func _spawn_capsule(center: Vector2) -> void:
+	var kind: String = _roll_capsule_kind()
+	var panel := PanelContainer.new()
+	panel.add_theme_stylebox_override("panel", UIKit.stylebox(CAPSULE_COLOR[kind].darkened(0.4), CAPSULE_COLOR[kind].lightened(0.3), 9, 2))
+	panel.size = CAPSULE_SIZE
+	panel.position = center - CAPSULE_SIZE / 2.0
+	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var lbl := Label.new()
+	lbl.text = CAPSULE_LETTER[kind]
+	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	lbl.add_theme_font_size_override("font_size", 13)
+	lbl.add_theme_color_override("font_color", UIKit.COLOR_TEXT)
+	panel.add_child(lbl)
+	play_area.add_child(panel)
+	capsules.append({"pos": panel.position, "kind": kind, "view": panel})
+
+
+func _update_capsules(delta: float) -> void:
+	var paddle_rect := Rect2(paddle.position, Vector2(paddle_w, PADDLE_H))
+	for i in range(capsules.size() - 1, -1, -1):
+		var c: Dictionary = capsules[i]
+		c["pos"].y += CAPSULE_FALL_SPEED * delta
+		c["view"].position = c["pos"]
+		var caught: bool = Rect2(c["pos"], CAPSULE_SIZE).intersects(paddle_rect)
+		if caught or c["pos"].y > PLAY_H:
+			if caught:
+				_apply_capsule(c["kind"])
+			c["view"].queue_free()
+			capsules.remove_at(i)
+
+
+func _apply_capsule(kind: String) -> void:
+	AudioManager.play_place()
+	match kind:
+		"expand":
+			shrink_timer = 0.0
+			expand_timer = POWERUP_DURATION
+			_set_paddle_width(PADDLE_W * PADDLE_EXPAND_MULT)
+		"shrink":
+			expand_timer = 0.0
+			shrink_timer = POWERUP_DURATION
+			_set_paddle_width(PADDLE_W * PADDLE_SHRINK_MULT)
+		"slow":
+			slow_timer = POWERUP_DURATION
+		"multiball":
+			if not balls.is_empty():
+				var base: Dictionary = balls[0]
+				var base_speed: float = maxf(base["vel"].length(), _ball_speed_for_level(level))
+				for ang: float in [-0.5, 0.5]:
+					var dir: Vector2 = base["vel"].normalized().rotated(ang) if base["vel"].length() > 1.0 else Vector2(sin(ang), -cos(ang))
+					_spawn_ball(base["pos"], dir * base_speed)
+		"laser":
+			laser_timer = POWERUP_DURATION
+		"life":
+			lives += 1
+	_update_hud()
+
+
+func _update_laser(delta: float) -> void:
+	if laser_fire_cooldown > 0.0:
+		laser_fire_cooldown -= delta
+	if laser_timer > 0.0 and laser_fire_cooldown <= 0.0:
+		laser_fire_cooldown = LASER_COOLDOWN
+		_fire_laser()
+
+	for i in range(laser_bolts.size() - 1, -1, -1):
+		var l: Dictionary = laser_bolts[i]
+		l["pos"].y -= 620.0 * delta
+		l["view"].position = l["pos"]
+		var bolt_rect := Rect2(l["pos"], Vector2(4, 16))
+		var hit := false
+		for brick: Dictionary in bricks:
+			if brick["alive"] and bolt_rect.intersects(brick["rect"]):
+				_damage_brick(brick)
+				hit = true
+				break
+		if hit or l["pos"].y < -16.0:
+			l["view"].queue_free()
+			laser_bolts.remove_at(i)
+
+
+func _fire_laser() -> void:
+	for side: float in [0.22, 0.78]:
+		var pos := Vector2(paddle.position.x + paddle_w * side - 2.0, paddle.position.y - 16.0)
+		var view := EntitySprite.new()
+		view.size = Vector2(4, 16)
+		view.position = pos
+		view.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		view.setup("bullet", UIKit.COLOR_ACCENT, UIKit.COLOR_TEXT)
+		play_area.add_child(view)
+		laser_bolts.append({"pos": pos, "view": view})
 
 
 func _all_bricks_cleared() -> bool:
