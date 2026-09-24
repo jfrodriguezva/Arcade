@@ -19,7 +19,6 @@ const ROW_SPACING := 46.0
 const COL_SPACING := 78.0
 const SWAY_SPEED := 1.6
 const SWAY_AMPLITUDE := 22.0
-const DIVE_SPEED := 250.0
 const ENEMY_BULLET_SPEED := 280.0
 const MAX_LEVEL := 10
 const STAR_COUNT := 34
@@ -35,10 +34,25 @@ const ROW_VISUALS := [
 	{"shape": "alien", "color": UIKit.COLOR_TEXT_DIM, "color2": UIKit.COLOR_ACCENT_2},
 	{"shape": "alien", "color": Color(0.75, 0.30, 0.38), "color2": UIKit.COLOR_TEXT_DIM},
 ]
+## Fila 0 son los "jefes" (estilo Boss Galaga): valen más y son los únicos
+## capaces de capturar la nave con un rayo tractor. El resto vale menos en
+## formación pero más al picar (como en el arcade original).
+const ROW_POINTS_FORMATION := [150, 80, 80, 50, 50, 50]
+const ROW_POINTS_DIVING := [400, 160, 160, 100, 100, 100]
+
+const ENTRY_DURATION := 1.05
+const ENTRY_STAGGER := 0.07
+const DIVE_DURATION := 1.55
+const CAPTURE_CHANCE := 0.3
+const CAPTURE_MIN_LEVEL := 2
+const CAPTURE_RETURN_DURATION := 0.8
+const CAPTURED_TINT := Color(0.55, 0.58, 0.66)
 
 const HELP_TEXT := "Muévete con ◀ ▶ y dispara con 🔫 hacia arriba.
 
-La formación de naves se mece de un lado a otro. De vez en cuando una nave se lanza en picada hacia ti y dispara — esquívala o destrúyela (vale más puntos que una que sigue en formación).
+Al iniciar cada nivel, la formación entra volando en curva desde los bordes — espera a que se acomode. Luego se mece de un lado a otro y de vez en cuando una nave pica hacia ti en una curva envolvente, disparando — esquívala o destrúyela (vale más puntos que una que sigue en formación).
+
+Cuidado con los jefes (arriba, con escudo giratorio): a veces, en vez de disparar, capturan tu nave con un rayo tractor y se la llevan a la formación. Sigues jugando con una nave nueva, pero para rescatar la capturada debes destruir justo a ese jefe — al lograrlo, vuelas con dos naves a la vez (doble disparo) el resto del nivel.
 
 Destruye toda la formación (incluyendo las que se lanzan en picada) para pasar de nivel. Hay 10 niveles, cada uno con más filas y picadas más frecuentes. Pierdes si se acaban tus 3 vidas."
 
@@ -54,6 +68,9 @@ var enemy_bullets: Array = []
 var dive_timer: float = 0.0
 var dive_interval: float = 1.6
 var stars: Array = []
+
+var player_captured: bool = false
+var captured_fighter: Dictionary = {}
 
 var score: int = 0
 var lives: int = 3
@@ -210,6 +227,11 @@ func _new_game() -> void:
 func _setup_level() -> void:
 	player_x = PLAY_W / 2.0 - PLAYER_SIZE.x / 2.0
 	player_view.position = Vector2(player_x, PLAYER_Y)
+	player_view.visible = true
+	player_captured = false
+	if captured_fighter.get("view") != null:
+		captured_fighter["view"].queue_free()
+	captured_fighter = {}
 
 	for e: Dictionary in enemies:
 		e["view"].queue_free()
@@ -225,6 +247,7 @@ func _setup_level() -> void:
 	var total_width: float = (FORMATION_COLS - 1) * COL_SPACING
 	var start_x: float = (PLAY_W - total_width) / 2.0 - ENEMY_SIZE.x / 2.0
 
+	var idx: int = 0
 	for r in range(rows):
 		var visual: Dictionary = ROW_VISUALS[r % ROW_VISUALS.size()]
 		for c in range(FORMATION_COLS):
@@ -232,18 +255,27 @@ func _setup_level() -> void:
 			var by: float = FORMATION_TOP + r * ROW_SPACING
 			var view := EntitySprite.new()
 			view.size = ENEMY_SIZE
-			view.position = Vector2(bx, by)
 			view.mouse_filter = Control.MOUSE_FILTER_IGNORE
 			view.setup(visual["shape"], visual["color"], visual["color2"], r * FORMATION_COLS + c)
 			play_area.add_child(view)
+
+			# Entrada en curva: llegan desde una esquina fuera de pantalla,
+			# escalonadas por columna, en vez de aparecer ya formadas.
+			var from_side: float = -60.0 if c < FORMATION_COLS / 2.0 else PLAY_W + 60.0
+			var entry_from := Vector2(from_side, -70.0 - r * 14.0)
+			var entry_ctrl := Vector2(lerp(from_side, bx, 0.35), by - 220.0 - r * 10.0)
+			view.position = entry_from
+
 			enemies.append({
-				"base_x": bx, "base_y": by, "pos": Vector2(bx, by), "state": "formation",
-				"dive_vel": Vector2.ZERO, "phase": randf() * TAU, "wing_seed": randf(),
-				"has_shot": false, "view": view,
+				"row": r, "base_x": bx, "base_y": by, "pos": entry_from, "state": "entering",
+				"phase": randf() * TAU, "wing_seed": randf(), "has_shot": false, "view": view,
+				"entry_from": entry_from, "entry_ctrl": entry_ctrl,
+				"entry_t": -float(idx) * ENTRY_STAGGER, "is_boss": r == 0, "carries_capture": false,
 			})
+			idx += 1
 
 	dive_interval = max(0.5, 1.7 - level * 0.1)
-	dive_timer = dive_interval
+	dive_timer = dive_interval + rows * FORMATION_COLS * ENTRY_STAGGER + ENTRY_DURATION
 	status_label.text = "Nivel %d / %d" % [level, MAX_LEVEL]
 	_update_hud()
 
@@ -254,10 +286,17 @@ func _update_hud() -> void:
 
 
 func _on_shoot_pressed() -> void:
-	if state != "playing" or shoot_cooldown > 0.0:
+	if state != "playing" or shoot_cooldown > 0.0 or player_captured:
 		return
 	shoot_cooldown = SHOOT_COOLDOWN
-	var pos := Vector2(player_x + PLAYER_SIZE.x / 2.0 - 4.0, PLAYER_Y - 10.0)
+	_fire_bullet_from(player_x + PLAYER_SIZE.x / 2.0 - 4.0)
+	if not captured_fighter.is_empty() and captured_fighter.get("active", false):
+		var cap_view: EntitySprite = captured_fighter["view"]
+		_fire_bullet_from(cap_view.position.x + cap_view.size.x / 2.0 - 4.0)
+
+
+func _fire_bullet_from(bx: float) -> void:
+	var pos := Vector2(bx, PLAYER_Y - 10.0)
 	var view := EntitySprite.new()
 	view.size = Vector2(8, 14)
 	view.position = pos
@@ -289,28 +328,63 @@ func _process(delta: float) -> void:
 		if e["state"] == "removed":
 			continue
 		e["view"].set_phase(fmod(time_acc * 1.4 + e["wing_seed"], 1.0))
-		if e["state"] == "formation":
-			e["pos"].x = e["base_x"] + sin(time_acc * SWAY_SPEED + e["phase"]) * SWAY_AMPLITUDE
-			e["pos"].y = e["base_y"]
-			e["view"].position = e["pos"]
-		elif e["state"] == "diving":
-			e["pos"] += e["dive_vel"] * delta
-			e["view"].position = e["pos"]
-			if e["pos"].y > PLAY_H:
-				_remove_enemy(e, false)
-			elif not e["has_shot"] and e["pos"].y > PLAYER_Y * 0.35:
-				e["has_shot"] = true
-				_spawn_enemy_bullet(e)
+
+		match e["state"]:
+			"entering":
+				e["entry_t"] += delta
+				if e["entry_t"] < 0.0:
+					continue
+				var t: float = clamp(e["entry_t"] / ENTRY_DURATION, 0.0, 1.0)
+				e["pos"] = _bezier2(e["entry_from"], e["entry_ctrl"], Vector2(e["base_x"], e["base_y"]), t)
+				e["view"].position = e["pos"]
+				if t >= 1.0:
+					e["state"] = "formation"
+			"formation":
+				e["pos"].x = e["base_x"] + sin(time_acc * SWAY_SPEED + e["phase"]) * SWAY_AMPLITUDE
+				e["pos"].y = e["base_y"]
+				e["view"].position = e["pos"]
+				if e["carries_capture"]:
+					_update_captive_visual(e)
+			"diving":
+				e["dive_t"] += delta / DIVE_DURATION
+				var t2: float = clamp(e["dive_t"], 0.0, 1.0)
+				e["pos"] = _bezier3(e["dive_from"], e["dive_ctrl1"], e["dive_ctrl2"], e["dive_to"], t2)
+				e["view"].position = e["pos"]
+				if e["carries_capture"] and not player_captured:
+					_update_captive_visual(e)
+				if e.get("capture_dive", false) and not e["has_captured"] and not player_captured and t2 >= 0.46:
+					_trigger_capture(e)
+				elif not e["capture_dive"] and not e["has_shot"] and t2 >= 0.3:
+					e["has_shot"] = true
+					_spawn_enemy_bullet(e)
+				if t2 >= 1.0:
+					if e["has_captured"]:
+						_start_capture_return(e)
+					else:
+						_remove_enemy(e, false)
+			"returning":
+				e["entry_t"] += delta
+				var t3: float = clamp(e["entry_t"] / CAPTURE_RETURN_DURATION, 0.0, 1.0)
+				e["pos"] = _bezier2(e["entry_from"], e["entry_ctrl"], Vector2(e["base_x"], e["base_y"]), t3)
+				e["view"].position = e["pos"]
+				_update_captive_visual(e)
+				if t3 >= 1.0:
+					e["state"] = "formation"
+					player_captured = false
+					player_view.visible = true
 
 	_update_bullets(delta)
 	_update_enemy_bullets(delta)
 	_check_dive_collisions()
+	_update_dual_fighter()
 
 	if state == "playing" and _all_enemies_cleared():
 		_advance_level()
 
 
 func _update_player(delta: float) -> void:
+	if player_captured:
+		return
 	var vx := 0.0
 	if moving_left and not moving_right:
 		vx = -PLAYER_SPEED
@@ -321,17 +395,89 @@ func _update_player(delta: float) -> void:
 
 
 func _start_random_dive() -> void:
+	if player_captured:
+		return
 	var candidates: Array = []
+	var boss_candidates: Array = []
 	for e: Dictionary in enemies:
-		if e["state"] == "formation":
-			candidates.append(e)
+		if e["state"] != "formation":
+			continue
+		candidates.append(e)
+		if e["is_boss"] and not e["carries_capture"]:
+			boss_candidates.append(e)
 	if candidates.is_empty():
 		return
-	var e: Dictionary = candidates[randi() % candidates.size()]
+
+	var capture_dive: bool = (
+		level >= CAPTURE_MIN_LEVEL and not boss_candidates.is_empty()
+		and captured_fighter.is_empty() and randf() < CAPTURE_CHANCE
+	)
+	var e: Dictionary = boss_candidates[randi() % boss_candidates.size()] if capture_dive \
+		else candidates[randi() % candidates.size()]
+
 	e["state"] = "diving"
 	e["has_shot"] = false
-	var target := Vector2(player_x + PLAYER_SIZE.x / 2.0, PLAY_H)
-	e["dive_vel"] = (target - e["pos"]).normalized() * DIVE_SPEED
+	e["has_captured"] = false
+	e["capture_dive"] = capture_dive
+	e["dive_t"] = 0.0
+
+	var start: Vector2 = e["pos"]
+	var side: float = 1.0 if start.x < PLAY_W / 2.0 else -1.0
+	var target_x: float = player_x + PLAYER_SIZE.x / 2.0
+	e["dive_from"] = start
+	e["dive_ctrl1"] = start + Vector2(side * 100.0, 110.0)
+	e["dive_ctrl2"] = Vector2(lerp(start.x, target_x, 0.55), PLAY_H * 0.62)
+	e["dive_to"] = Vector2(target_x, PLAY_H + 50.0)
+
+
+func _bezier2(a: Vector2, b: Vector2, c: Vector2, t: float) -> Vector2:
+	return a.lerp(b, t).lerp(b.lerp(c, t), t)
+
+
+func _bezier3(a: Vector2, b: Vector2, c: Vector2, d: Vector2, t: float) -> Vector2:
+	var ab: Vector2 = a.lerp(b, t)
+	var bc: Vector2 = b.lerp(c, t)
+	var cd: Vector2 = c.lerp(d, t)
+	return ab.lerp(bc, t).lerp(bc.lerp(cd, t), t)
+
+
+func _trigger_capture(e: Dictionary) -> void:
+	## El jefe atrapa la nave con un rayo tractor: se oculta la nave
+	## principal y el jugador pierde el control hasta que el jefe la deje
+	## en la formación (o hasta que se rescate destruyendo a ese jefe).
+	e["has_captured"] = true
+	e["carries_capture"] = true
+	player_captured = true
+	player_view.visible = false
+	captured_fighter = {"view": null, "active": false, "owner": e}
+
+
+func _start_capture_return(e: Dictionary) -> void:
+	e["state"] = "returning"
+	e["entry_from"] = e["pos"]
+	e["entry_ctrl"] = Vector2(lerp(e["pos"].x, e["base_x"], 0.4), min(e["pos"].y, e["base_y"]) - 120.0)
+	e["entry_t"] = 0.0
+
+	var cap_view := EntitySprite.new()
+	cap_view.size = PLAYER_SIZE * 0.85
+	cap_view.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	cap_view.setup("ship", CAPTURED_TINT, CAPTURED_TINT.lightened(0.3))
+	play_area.add_child(cap_view)
+	captured_fighter["view"] = cap_view
+
+
+func _update_captive_visual(e: Dictionary) -> void:
+	if not captured_fighter.is_empty() and captured_fighter.get("view") != null and not captured_fighter.get("active", false):
+		var v: EntitySprite = captured_fighter["view"]
+		v.position = e["pos"] + Vector2(ENEMY_SIZE.x / 2.0 - v.size.x / 2.0, ENEMY_SIZE.y + 4.0)
+
+
+func _update_dual_fighter() -> void:
+	if captured_fighter.is_empty() or not captured_fighter.get("active", false):
+		return
+	var v: EntitySprite = captured_fighter["view"]
+	v.position = Vector2(player_x + PLAYER_SIZE.x + 10.0, PLAYER_Y)
+	v.visible = player_view.visible
 
 
 func _spawn_enemy_bullet(e: Dictionary) -> void:
@@ -380,16 +526,19 @@ func _update_enemy_bullets(delta: float) -> void:
 			b["view"].queue_free()
 			enemy_bullets.remove_at(i)
 			continue
-		if Rect2(b["pos"], Vector2(8, 12)).intersects(player_rect):
+		if not player_captured and Rect2(b["pos"], Vector2(8, 12)).intersects(player_rect):
 			b["view"].queue_free()
 			enemy_bullets.remove_at(i)
 			_lose_life()
 
 
 func _check_dive_collisions() -> void:
+	if player_captured:
+		return
 	var player_rect := Rect2(player_x, PLAYER_Y, PLAYER_SIZE.x, PLAYER_SIZE.y)
 	for e: Dictionary in enemies:
-		if e["state"] == "diving" and Rect2(e["pos"], ENEMY_SIZE).intersects(player_rect):
+		if e["state"] == "diving" and not e.get("capture_dive", false) \
+				and Rect2(e["pos"], ENEMY_SIZE).intersects(player_rect):
 			_remove_enemy(e, false)
 			_lose_life()
 			return
@@ -397,10 +546,32 @@ func _check_dive_collisions() -> void:
 
 func _remove_enemy(e: Dictionary, by_bullet: bool) -> void:
 	if by_bullet:
-		score += 150 if e["state"] == "diving" else 50
+		var row: int = e.get("row", ROW_VISUALS.size() - 1)
+		var was_diving: bool = e["state"] == "diving" or e["state"] == "returning"
+		score += ROW_POINTS_DIVING[row] if was_diving else ROW_POINTS_FORMATION[row]
 		_update_hud()
+		if e.get("carries_capture", false):
+			_rescue_captive()
+	elif e.get("carries_capture", false):
+		# El jefe que llevaba tu nave capturada murió de otra forma (choque
+		# contigo, por ejemplo): la nave capturada se pierde, pero limpiamos
+		# su sprite fantasma para no dejarlo huérfano ni bloquear futuras
+		# capturas el resto del nivel.
+		if captured_fighter.get("view") != null:
+			captured_fighter["view"].queue_free()
+		captured_fighter = {}
 	e["state"] = "removed"
 	e["view"].visible = false
+
+
+func _rescue_captive() -> void:
+	## Al destruir al jefe que se llevó tu nave, la recuperas: de aquí en
+	## adelante vuelas con dos naves (disparo doble), como en el original.
+	if captured_fighter.is_empty():
+		return
+	captured_fighter["active"] = true
+	player_captured = false
+	player_view.visible = true
 
 
 func _all_enemies_cleared() -> bool:
@@ -413,6 +584,12 @@ func _all_enemies_cleared() -> bool:
 func _lose_life() -> void:
 	lives -= 1
 	_update_hud()
+	if not captured_fighter.is_empty():
+		# Perder la nave principal también cuesta la nave doble ganada por
+		# rescate, igual que en el arcade original: vuelves a un solo caza.
+		if captured_fighter.get("view") != null:
+			captured_fighter["view"].queue_free()
+		captured_fighter = {}
 	if lives <= 0:
 		state = "game_over"
 		status_label.text = "Game Over. Puntos: %d" % score
