@@ -64,6 +64,8 @@ var move_timer: float = 0.0
 var player_prev_pos: Vector2 = Vector2.ZERO
 var player_target_pos: Vector2 = Vector2.ZERO
 var trail: Array = []
+var trail_origin: Vector2i = Vector2i.ZERO
+var trail_line: Line2D
 var drone_phase: float = 0.0
 
 var enemies: Array = []
@@ -177,6 +179,22 @@ func _build_ui() -> void:
 			row.append(cell)
 		cell_views.append(row)
 
+	# La traza activa ya no se pinta celda por celda (eso es lo que se veía
+	# "cuadriculado"): es una sola línea suave tipo trazo de pluma, que
+	# sigue la posición interpolada del marcador en vez de saltar de
+	# centro-de-celda en centro-de-celda.
+	trail_line = Line2D.new()
+	trail_line.width = CELL * 0.22
+	trail_line.joint_mode = Line2D.LINE_JOINT_ROUND
+	trail_line.begin_cap_mode = Line2D.LINE_CAP_ROUND
+	trail_line.end_cap_mode = Line2D.LINE_CAP_ROUND
+	trail_line.antialiased = true
+	var trail_gradient := Gradient.new()
+	trail_gradient.set_color(0, Color(UIKit.COLOR_ACCENT_3.r, UIKit.COLOR_ACCENT_3.g, UIKit.COLOR_ACCENT_3.b, 0.65))
+	trail_gradient.set_color(1, Color(1.0, 1.0, 1.0, 1.0))
+	trail_line.gradient = trail_gradient
+	play_area.add_child(trail_line)
+
 	player_view = EntitySprite.new()
 	player_view.size = Vector2(CELL * 0.9, CELL * 0.9)
 	player_view.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -282,6 +300,7 @@ func _setup_level() -> void:
 	player_target_pos = Vector2.ZERO
 	player_view.position = Vector2.ZERO
 	trail.clear()
+	trail_line.points = PackedVector2Array()
 	_build_perimeter()
 	time_left = _level_time_limit()
 
@@ -439,6 +458,7 @@ func _process(delta: float) -> void:
 	var spin: float = DRONE_SPIN_TRACE if not trail.is_empty() else DRONE_SPIN_IDLE
 	drone_phase = fposmod(drone_phase + delta * spin, 1.0)
 	player_view.set_phase(drone_phase)
+	_update_trail_line()
 
 	for e: Dictionary in enemies:
 		e["timer"] += delta
@@ -492,10 +512,11 @@ func _try_move_player() -> void:
 			_lose_life()
 			return
 
+	if trail.is_empty():
+		trail_origin = player_cell
 	grid_state[next.y][next.x] = "trail"
 	trail.append(next)
 	player_cell = next
-	_restyle_trail()
 
 
 func _complete_capture() -> void:
@@ -516,6 +537,7 @@ func _complete_capture() -> void:
 				newly_cells.append(key)
 
 	trail.clear()
+	trail_line.points = PackedVector2Array()
 	_curtain_reveal(newly_cells)
 	# Puntaje proporcional al área encerrada de una sola vez (como el
 	# arcade original: capturas grandes valen mucho más que ir celda a
@@ -605,6 +627,7 @@ func _lose_life() -> void:
 	player_prev_pos = Vector2.ZERO
 	player_target_pos = Vector2.ZERO
 	player_view.position = Vector2.ZERO
+	trail_line.points = PackedVector2Array()
 	_redraw_grid()
 	_update_hud()
 
@@ -677,30 +700,28 @@ func _style_cell(y: int, x: int) -> void:
 	var view: Panel = cell_views[y][x]
 	var s: String = grid_state[y][x]
 	var color: Color
-	match s:
-		"captured":
-			color = target_colors[y][x]
-		"trail":
-			# Estilo plano de respaldo; mientras la traza está activa,
-			# _restyle_trail() la redibuja con un degradado tipo "cometa".
-			color = UIKit.COLOR_ACCENT_3
-		_:
-			color = UIKit.COLOR_BG.lerp(UIKit.COLOR_BG_LIGHT, 0.3)
+	if s == "captured":
+		color = target_colors[y][x]
+	else:
+		# Las celdas "trail" (traza en curso) también quedan con el fondo
+		# normal: la traza ya no se pinta celda por celda, la dibuja
+		# trail_line encima como un trazo continuo (ver _update_trail_line).
+		color = UIKit.COLOR_BG.lerp(UIKit.COLOR_BG_LIGHT, 0.3)
 	view.add_theme_stylebox_override("panel", UIKit.stylebox(color, Color(0, 0, 0, 0), 1))
 
 
-func _restyle_trail() -> void:
-	## Pinta la traza en curso con un degradado de brillo tipo "cola de
-	## cometa": los segmentos más recientes (cerca del marcador) quedan
-	## brillantes con un borde de resplandor; los más viejos (cerca del
-	## borde seguro) se atenúan. Refuerza visualmente el riesgo de la traza
-	## abierta sin tocar la lógica de colisión/captura.
-	var n: int = trail.size()
-	for i in range(n):
-		var c: Vector2i = trail[i]
-		var t: float = float(i + 1) / float(n)
-		var fill: Color = UIKit.COLOR_ACCENT_3.lerp(Color.WHITE, 0.3 * t)
-		fill.a = lerp(0.6, 1.0, t)
-		var glow: Color = Color(1.0, 1.0, 1.0, 0.25 + 0.45 * t)
-		var view: Panel = cell_views[c.y][c.x]
-		view.add_theme_stylebox_override("panel", UIKit.stylebox(fill, glow, 1, 2))
+func _update_trail_line() -> void:
+	## La traza en curso se dibuja como una sola línea suave (tipo trazo de
+	## pluma) en vez de celdas cuadriculadas: arranca en el punto exacto del
+	## borde seguro que se dejó (trail_origin), pasa por el centro de cada
+	## celda ya trazada, y su punta sigue la posición interpolada del
+	## marcador (no la celda lógica) para que se vea continua, no a saltos.
+	if trail.is_empty():
+		trail_line.points = PackedVector2Array()
+		return
+	var pts: PackedVector2Array = PackedVector2Array()
+	pts.append(Vector2(trail_origin) * CELL + Vector2(CELL, CELL) / 2.0)
+	for c: Vector2i in trail:
+		pts.append(Vector2(c) * CELL + Vector2(CELL, CELL) / 2.0)
+	pts.append(player_view.position + player_view.size / 2.0)
+	trail_line.points = pts
