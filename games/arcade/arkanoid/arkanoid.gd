@@ -136,7 +136,7 @@ func _build_ui() -> void:
 	play_area.add_child(paddle)
 
 	var restart_btn := Button.new()
-	restart_btn.text = "↻  Nueva partida"
+	restart_btn.text = "🔁  Nueva partida"
 	restart_btn.custom_minimum_size = Vector2(220, 52)
 	UIKit.style_button(restart_btn, UIKit.COLOR_ACCENT_3)
 	restart_btn.pressed.connect(func() -> void:

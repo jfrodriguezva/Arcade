@@ -130,7 +130,7 @@ func _build_ui() -> void:
 	numpad.add_child(erase_btn)
 
 	var restart_btn := Button.new()
-	restart_btn.text = "↻  Nuevo Sudoku / Dificultad"
+	restart_btn.text = "🔁  Nuevo Sudoku / Dificultad"
 	restart_btn.custom_minimum_size = Vector2(260, 48)
 	UIKit.style_button(restart_btn, UIKit.COLOR_ACCENT_3)
 	restart_btn.pressed.connect(func() -> void: UIKit.show_setup_overlay(self, "Sudoku", false, true, _on_setup_confirmed))

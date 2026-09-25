@@ -34,7 +34,7 @@ const HELP_TEXT := "Las piezas caen solas; acomódalas para completar filas hori
 - 🔄 la rota.
 - ⬇ (mantén presionado) la hace caer más rápido.
 - ⏬ la deja caer al fondo de una vez.
-- ⇄ la guarda para usarla después (una vez por pieza): la primera vez saca la siguiente, luego intercambia.
+- 🔀 la guarda para usarla después (una vez por pieza): la primera vez saca la siguiente, luego intercambia.
 
 El contorno tenue debajo de la pieza muestra dónde caerá si usas ⏬. El panel \"Siguiente\" te enseña la próxima pieza con anticipación, y \"Guardada\" la que dejaste en reserva. Las piezas salen en \"bolsas\" de las 7 formas sin repetir, como en el Tetris moderno — nunca hay una sequía larga de una pieza.
 
@@ -214,12 +214,12 @@ func _build_ui() -> void:
 
 	controls_row.add_child(_build_cluster("ACCIÓN", [soft_btn, hard_btn]))
 
-	var hold_btn := _make_control_button("⇄", UIKit.COLOR_TEXT_DIM, Vector2(64, 64), 24)
+	var hold_btn := _make_control_button("🔀", UIKit.COLOR_TEXT_DIM, Vector2(64, 64), 24)
 	hold_btn.pressed.connect(_on_hold_pressed)
 	controls_row.add_child(_build_cluster("GUARDAR", [hold_btn]))
 
 	var restart_btn := Button.new()
-	restart_btn.text = "↻  Nueva partida"
+	restart_btn.text = "🔁  Nueva partida"
 	restart_btn.custom_minimum_size = Vector2(200, 48)
 	UIKit.style_button(restart_btn, UIKit.COLOR_ACCENT_3)
 	restart_btn.pressed.connect(_new_game)

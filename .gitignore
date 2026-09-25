@@ -9,6 +9,11 @@ mono_crash.*.json
 # Exports
 /build/
 /export/
+*.zip
+
+# Herramientas locales de prueba (túnel, servidor web ad hoc)
+/.tools/
+serve_web.ps1
 
 # OS
 .DS_Store

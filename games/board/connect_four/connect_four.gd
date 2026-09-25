@@ -104,7 +104,7 @@ func _build_ui() -> void:
 		cell_views.append(row)
 
 	var restart_btn := Button.new()
-	restart_btn.text = "↻  Nueva partida / Modo"
+	restart_btn.text = "🔁  Nueva partida / Modo"
 	restart_btn.custom_minimum_size = Vector2(220, 48)
 	UIKit.style_button(restart_btn, UIKit.COLOR_ACCENT_3)
 	restart_btn.pressed.connect(func() -> void: UIKit.show_setup_overlay(self, "Cuatro en Línea", true, true, _on_setup_confirmed))

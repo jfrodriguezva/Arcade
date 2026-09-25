@@ -136,7 +136,7 @@ func _build_ui() -> void:
 	score_grid.add_child(right_total_label)
 
 	var restart_btn := Button.new()
-	restart_btn.text = "↻  Nueva partida / Modo"
+	restart_btn.text = "🔁  Nueva partida / Modo"
 	restart_btn.custom_minimum_size = Vector2(220, 48)
 	UIKit.style_button(restart_btn, UIKit.COLOR_ACCENT_3)
 	restart_btn.pressed.connect(func() -> void: UIKit.show_setup_overlay(self, "Generala", true, true, _on_setup_confirmed))

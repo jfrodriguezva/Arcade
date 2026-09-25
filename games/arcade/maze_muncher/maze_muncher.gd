@@ -140,7 +140,7 @@ func _build_ui() -> void:
 	stats_row.add_child(status_label)
 
 	var restart_btn := Button.new()
-	restart_btn.text = "↻"
+	restart_btn.text = "🔁"
 	restart_btn.custom_minimum_size = Vector2(32, 32)
 	restart_btn.add_theme_font_size_override("font_size", 16)
 	UIKit.style_button(restart_btn, UIKit.COLOR_TEXT_DIM, 9)

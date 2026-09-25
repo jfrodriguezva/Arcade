@@ -106,7 +106,7 @@ func _build_ui() -> void:
 	vbox.add_child(cards_container)
 
 	var restart_btn := Button.new()
-	restart_btn.text = "↻  Nueva partida / Modo"
+	restart_btn.text = "🔁  Nueva partida / Modo"
 	restart_btn.custom_minimum_size = Vector2(220, 48)
 	UIKit.style_button(restart_btn, UIKit.COLOR_ACCENT_3)
 	restart_btn.pressed.connect(func() -> void: UIKit.show_setup_overlay(self, "Bingo", true, false, _on_setup_confirmed))

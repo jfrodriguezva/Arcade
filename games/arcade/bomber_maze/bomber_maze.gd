@@ -200,7 +200,7 @@ func _build_ui() -> void:
 	controls_row.add_child(bomb_btn)
 
 	var restart_btn := Button.new()
-	restart_btn.text = "↻  Nueva partida"
+	restart_btn.text = "🔁  Nueva partida"
 	restart_btn.custom_minimum_size = Vector2(200, 48)
 	UIKit.style_button(restart_btn, UIKit.COLOR_ACCENT_3)
 	restart_btn.pressed.connect(_new_game)

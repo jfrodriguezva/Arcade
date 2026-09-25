@@ -124,7 +124,7 @@ func _build_ui() -> void:
 		point_buttons[p] = _make_point_button(bottom_row, p)
 
 	var restart_btn := Button.new()
-	restart_btn.text = "↻  Nueva partida / Modo"
+	restart_btn.text = "🔁  Nueva partida / Modo"
 	restart_btn.custom_minimum_size = Vector2(220, 48)
 	UIKit.style_button(restart_btn, UIKit.COLOR_ACCENT_3)
 	restart_btn.pressed.connect(func() -> void: UIKit.show_setup_overlay(self, "Backgammon", true, true, _on_setup_confirmed))

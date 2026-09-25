@@ -17,6 +17,7 @@ config/icon="res://icon.svg"
 
 [autoload]
 
+FontSetup="*res://core/autoload/font_setup.gd"
 SaveManager="*res://core/autoload/save_manager.gd"
 SettingsManager="*res://core/autoload/settings_manager.gd"
 GameManager="*res://core/autoload/game_manager.gd"
