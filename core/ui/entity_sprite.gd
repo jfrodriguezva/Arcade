@@ -426,17 +426,38 @@ func _draw_blast(s: Vector2) -> void:
 
 # ------------------------------------------------------------ Panic Reveal -
 func _draw_cursor_drone(s: Vector2) -> void:
+	## Pluma trazando: la punta (nib) apunta "hacia arriba" en espacio local
+	## — el juego rota el nodo entero con set_facing() según hacia dónde se
+	## mueve, así que la punta siempre apunta hacia donde se está dibujando,
+	## como una pluma real escribiendo.
 	var w: float = s.x
 	var h: float = s.y
-	var spin: float = phase * TAU
-	draw_circle(Vector2.ZERO, min(w, h) * 0.4, color)
-	_outline(_circle_pts(min(w, h) * 0.4, 12), color.darkened(0.3), 1.4)
-	for i in 4:
-		var a: float = spin + i * (PI / 2.0)
-		var p: Vector2 = Vector2(cos(a), sin(a)) * min(w, h) * 0.28
-		draw_line(Vector2.ZERO, p, color2, 2.0)
-		draw_circle(p, 2.2, color2)
-	draw_circle(Vector2.ZERO, min(w, h) * 0.12, Color(1, 1, 1, 0.8))
+	var tip: float = h * 0.54
+	var tail: float = h * 0.42
+
+	draw_circle(Vector2(1.2, 1.6), w * 0.20, Color(0, 0, 0, 0.22))
+
+	var body := PackedVector2Array([
+		Vector2(0, -tip),
+		Vector2(w * 0.15, -tip * 0.30),
+		Vector2(w * 0.19, tail * 0.60),
+		Vector2(0, tail),
+		Vector2(-w * 0.19, tail * 0.60),
+		Vector2(-w * 0.15, -tip * 0.30),
+	])
+	_poly(body, color)
+	_outline(body, color.darkened(0.45), 1.4)
+
+	# hendidura central del plumín
+	draw_line(Vector2(0, -tip * 0.88), Vector2(0, tail * 0.35), color.darkened(0.5), 1.2)
+	# agujerito clásico del plumín
+	draw_circle(Vector2(0, tail * 0.05), w * 0.05, color2)
+	# brillo metálico
+	draw_line(Vector2(-w * 0.08, -tip * 0.45), Vector2(-w * 0.10, tail * 0.10), Color(1, 1, 1, 0.5), 1.6)
+
+	# gota de tinta en la punta, parpadeando mientras traza
+	var sparkle: float = 0.55 + 0.45 * sin(phase * TAU)
+	draw_circle(Vector2(0, -tip * 0.96), w * 0.045, Color(1, 1, 1, sparkle))
 
 
 func _draw_critter(s: Vector2) -> void:

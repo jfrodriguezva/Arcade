@@ -8,6 +8,14 @@ extends Control
 ## El "arte a revelar" es configurable por diseño (por ahora paisajes
 ## procedurales: cielo con degradado, sol y montañas) en vez de fotos,
 ## para que la mecánica sea reutilizable con cualquier tema de imagen.
+## El paisaje se dibuja con un shader (landscape.gdshader) a resolución
+## de pantalla completa, no celda por celda — por eso se ve nítido/HD y
+## sin cuadrícula. Lo "sin revelar" es otra capa (cover_mask.gdshader)
+## que lee una máscara de 1 texel por celda lógica del tablero, pero
+## muestreada con filtro bilineal para que el borde de revelado salga
+## suave en vez de un escalón duro por celda; la lógica de juego
+## (colisiones, captura, IA) sigue usando la cuadrícula GRID_W×GRID_H
+## normalmente, solo cambió cómo se dibuja.
 
 const GAME_ID := "panic_reveal"
 const GRID_W := 20
@@ -45,8 +53,15 @@ const HELP_TEXT := "Toca y arrastra en cualquier parte del tablero: el marcador 
 Captura el 75% del área para pasar de nivel. Hay 10 niveles, cada uno con más enemigos, más rápidos y menos tiempo. Pierdes si se acaban tus 3 vidas."
 
 var grid_state: Array = []
-var target_colors: Array = []
-var cell_views: Array = []
+## El paisaje ya no se pinta celda por celda: landscape_bg lo dibuja con un
+## shader a resolución de pantalla completa (nítido, sin cuadrícula), y
+## cover_layer pinta el "opaco" encima usando mask_image/mask_texture (un
+## texel por celda lógica, muestreado con filtro bilineal + smoothstep en
+## el shader para que el borde de revelado se vea suave, no en escalones).
+var landscape_bg: ColorRect
+var cover_layer: ColorRect
+var mask_image: Image
+var mask_texture: ImageTexture
 
 var player_cell: Vector2i = Vector2i.ZERO
 var current_dir: Vector2i = Vector2i.ZERO
@@ -168,16 +183,25 @@ func _build_ui() -> void:
 	play_area.gui_input.connect(_on_play_area_input)
 	play_panel.add_child(play_area)
 
-	for y in range(GRID_H):
-		var row: Array = []
-		for x in range(GRID_W):
-			var cell := Panel.new()
-			cell.position = Vector2(x * CELL, y * CELL)
-			cell.size = Vector2(CELL, CELL)
-			cell.mouse_filter = Control.MOUSE_FILTER_IGNORE
-			play_area.add_child(cell)
-			row.append(cell)
-		cell_views.append(row)
+	var board_size := Vector2(GRID_W * CELL, GRID_H * CELL)
+
+	landscape_bg = ColorRect.new()
+	landscape_bg.size = board_size
+	landscape_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	landscape_bg.material = ShaderMaterial.new()
+	landscape_bg.material.shader = load("res://games/arcade/panic_reveal/landscape.gdshader")
+	play_area.add_child(landscape_bg)
+
+	mask_image = Image.create(GRID_W, GRID_H, false, Image.FORMAT_R8)
+	mask_texture = ImageTexture.create_from_image(mask_image)
+
+	cover_layer = ColorRect.new()
+	cover_layer.size = board_size
+	cover_layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	cover_layer.material = ShaderMaterial.new()
+	cover_layer.material.shader = load("res://games/arcade/panic_reveal/cover_mask.gdshader")
+	cover_layer.material.set_shader_parameter("mask_tex", mask_texture)
+	play_area.add_child(cover_layer)
 
 	# La traza activa ya no se pinta celda por celda (eso es lo que se veía
 	# "cuadriculado"): es una sola línea suave tipo trazo de pluma, que
@@ -249,26 +273,16 @@ func _on_play_area_input(event: InputEvent) -> void:
 		current_dir = Vector2i.ZERO
 		return
 
-	var player_center: Vector2 = player_view.position + player_view.size / 2.0
+	# Se calcula desde la celda lógica (no desde player_view.position, que
+	# está animándose entre celdas) — usar la posición interpolada como
+	# referencia causaba que la dirección calculada "temblara" o se leyera
+	# mal justo cuando el marcador pasaba cerca del punto tocado, por puro
+	# efecto de la animación y no del dedo del jugador. Esto era lo que a
+	# veces hacía que el trazo fallara o se cortara solo.
+	var player_center: Vector2 = Vector2(player_cell) * CELL + Vector2(CELL, CELL) / 2.0
 	current_dir = _direction_from_vector(pos - player_center)
-
-
-func _landscape_color(gx: int, gy: int, lvl: int) -> Color:
-	var u: float = float(gx) / float(GRID_W)
-	var v: float = float(gy) / float(GRID_H)
-
-	var sun_center := Vector2(0.72, 0.26)
-	if Vector2(u, v).distance_to(sun_center) < 0.09:
-		return Color(1.0, 0.9, 0.55)
-
-	var mountain_height: float = 0.55 + 0.12 * sin(u * 8.0 + float(lvl))
-	if v > mountain_height:
-		var shade: float = clamp((v - mountain_height) * 2.0, 0.0, 1.0)
-		return Color(0.16, 0.19, 0.29).lerp(Color(0.05, 0.07, 0.14), shade)
-
-	var sky_top := Color(0.2, 0.25, 0.55)
-	var sky_bottom := Color(0.95, 0.55, 0.35)
-	return sky_top.lerp(sky_bottom, v)
+	if current_dir != Vector2i.ZERO:
+		player_view.set_facing(rad_to_deg(atan2(current_dir.x, -current_dir.y)))
 
 
 func _new_game() -> void:
@@ -281,16 +295,14 @@ func _new_game() -> void:
 
 func _setup_level() -> void:
 	grid_state = []
-	target_colors = []
 	for y in range(GRID_H):
 		var row: Array = []
-		var color_row: Array = []
 		for x in range(GRID_W):
 			var is_border: bool = x == 0 or y == 0 or x == GRID_W - 1 or y == GRID_H - 1
 			row.append("captured" if is_border else "open")
-			color_row.append(_landscape_color(x, y, level))
 		grid_state.append(row)
-		target_colors.append(color_row)
+	landscape_bg.material.set_shader_parameter("level", float(level))
+	_rebuild_mask()
 
 	player_cell = Vector2i(0, 0)
 	current_dir = Vector2i.ZERO
@@ -358,7 +370,6 @@ func _setup_level() -> void:
 		})
 
 	status_label.text = "Nivel %d/%d" % [level, MAX_LEVEL]
-	_redraw_grid()
 	_update_hud()
 
 
@@ -538,7 +549,7 @@ func _complete_capture() -> void:
 
 	trail.clear()
 	trail_line.points = PackedVector2Array()
-	_curtain_reveal(newly_cells)
+	_reveal_new_cells(newly_cells)
 	# Puntaje proporcional al área encerrada de una sola vez (como el
 	# arcade original: capturas grandes valen mucho más que ir celda a
 	# celda), con un pequeño extra fijo por cerrar el trazo.
@@ -628,7 +639,6 @@ func _lose_life() -> void:
 	player_target_pos = Vector2.ZERO
 	player_view.position = Vector2.ZERO
 	trail_line.points = PackedVector2Array()
-	_redraw_grid()
 	_update_hud()
 
 	if lives <= 0:
@@ -662,52 +672,34 @@ func _record_result(won: bool) -> void:
 	SaveManager.set_game_data(GAME_ID, stats)
 
 
-func _curtain_reveal(cells: Array) -> void:
-	## En vez de que el área capturada aparezca de golpe, se cubre con un
-	## tono oscuro sólido ("cortina" cerrada) y luego se barre de izquierda
-	## a derecha revelando el color real celda por celda, como si se
-	## corriera una cortina — más parecido al reveal del Gals Panic real
-	## que un cambio de color instantáneo.
-	if cells.is_empty():
-		return
-	cells.sort_custom(func(a: Vector2i, b: Vector2i) -> bool: return a.x < b.x if a.x != b.x else a.y < b.y)
-
-	var curtain_color := Color(0.05, 0.05, 0.08)
-	for c: Vector2i in cells:
-		var view: Panel = cell_views[c.y][c.x]
-		view.add_theme_stylebox_override("panel", UIKit.stylebox(curtain_color, Color(0, 0, 0, 0), 1))
-
-	var n: int = cells.size()
-	var duration: float = clamp(0.15 + n * 0.006, 0.2, 0.9)
-	var tw := create_tween()
-	tw.tween_method(_reveal_sweep_step.bind(cells), 0.0, 1.0, duration)
-
-
-func _reveal_sweep_step(t: float, cells: Array) -> void:
-	var target: int = int(ceil(t * cells.size()))
-	for i in range(target):
-		var c: Vector2i = cells[i]
-		_style_cell(c.y, c.x)
-
-
-func _redraw_grid() -> void:
+func _rebuild_mask() -> void:
+	## Reconstruye mask_image completo desde grid_state (1.0 = capturada,
+	## 0.0 = todavía no) y lo sube a mask_texture. Solo hace falta al
+	## arrancar un nivel — capturar celdas nuevas se anima aparte con
+	## _reveal_new_cells(), y perder una vida no cambia qué está capturado.
 	for y in range(GRID_H):
 		for x in range(GRID_W):
-			_style_cell(y, x)
+			var v: float = 1.0 if grid_state[y][x] == "captured" else 0.0
+			mask_image.set_pixel(x, y, Color(v, v, v))
+	mask_texture.update(mask_image)
 
 
-func _style_cell(y: int, x: int) -> void:
-	var view: Panel = cell_views[y][x]
-	var s: String = grid_state[y][x]
-	var color: Color
-	if s == "captured":
-		color = target_colors[y][x]
-	else:
-		# Las celdas "trail" (traza en curso) también quedan con el fondo
-		# normal: la traza ya no se pinta celda por celda, la dibuja
-		# trail_line encima como un trazo continuo (ver _update_trail_line).
-		color = UIKit.COLOR_BG.lerp(UIKit.COLOR_BG_LIGHT, 0.3)
-	view.add_theme_stylebox_override("panel", UIKit.stylebox(color, Color(0, 0, 0, 0), 1))
+func _reveal_new_cells(cells: Array) -> void:
+	## El área recién encerrada no aparece de golpe: su valor en la máscara
+	## sube de 0 a 1 en un tween corto, así que el shader de cover_mask las
+	## va destapando con un fundido — el equivalente con el sistema nuevo
+	## a la "cortina" que antes barría celda por celda.
+	if cells.is_empty():
+		return
+	var duration: float = clamp(0.15 + cells.size() * 0.006, 0.2, 0.9)
+	var tw := create_tween()
+	tw.tween_method(_apply_reveal_progress.bind(cells), 0.0, 1.0, duration)
+
+
+func _apply_reveal_progress(t: float, cells: Array) -> void:
+	for c: Vector2i in cells:
+		mask_image.set_pixel(c.x, c.y, Color(t, t, t))
+	mask_texture.update(mask_image)
 
 
 func _update_trail_line() -> void:
