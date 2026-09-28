@@ -34,6 +34,7 @@ const LEVEL_TIME_MIN := 42.0
 const SPARX_MIN_LEVEL := 3
 const SPARX_SPEED := 6.0  # celdas de borde por segundo
 const MAX_QIX_ENEMIES := 8  # tope para que una racha de capturas encadenadas no multiplique enemigos sin limite
+const SMALL_POCKET_MAX_CELLS := 16  # bolsa de este tamano o menos = "circulo pequeno": el qix muere en vez de dividirse
 const DIAGONAL_FACTOR := 1.41421356  # sqrt(2): un paso diagonal recorre más distancia real,
 	# así que tarda lo mismo por segundo (no "más rápido") que uno recto, igual que en el
 	# arcade original donde el marcador se mueve a velocidad constante en cualquier dirección.
@@ -103,6 +104,12 @@ var drone_phase: float = 0.0
 ## congelada a medias. _complete_capture ahora espera a que termine antes
 ## de avanzar de nivel.
 var reveal_tween: Tween = null
+## Celdas que reveal_tween está animando ahora mismo. Si _reveal_new_cells
+## se llama otra vez antes de que termine (p.ej. la captura principal y,
+## en el mismo cierre, el bonus por matar a un qix arrinconado), estas
+## celdas se fijan a "revelado" de inmediato en vez de dejarlas a medias --
+## el mismo tipo de residuo que ya causó el bug del nivel "precompletado".
+var reveal_cells: Array = []
 ## Se incrementa cada vez que arranca una partida nueva. _complete_capture
 ## lo captura antes de esperar la pausa de "nivel completo"; si cambió al
 ## despertar (el jugador le dio a "Nueva partida" en medio de la espera),
@@ -259,14 +266,32 @@ func _build_ui() -> void:
 	vbox.add_child(restart_btn)
 
 
-func _direction_from_vector(v: Vector2) -> Vector2i:
+const OCTANTS := [
+	Vector2i(1, 0), Vector2i(1, 1), Vector2i(0, 1), Vector2i(-1, 1),
+	Vector2i(-1, 0), Vector2i(-1, -1), Vector2i(0, -1), Vector2i(1, -1),
+]
+const OCTANT_STEP := PI / 4.0
+## Con histéresis 0 (la frontera exacta a 22.5°), un ángulo de dedo real
+## que tiembla justo ahí hace que la dirección lea PARA UN LADO Y PARA EL
+## OTRO frame a frame -- eso era lo que a veces "fallaba" el trazo: el
+## marcador daba un paso, luego el ruido lo mandaba a la celda de la que
+## venía (que ya es "trail"), y eso cuenta como tocar tu propia traza.
+## Con histéresis, una vez que ya vas en una dirección hace falta un
+## ángulo más lejos de ella (no solo cruzar la frontera de 22.5°) para
+## soltarla -- el trazo ya no tiembla por puro ruido del touch/mouse.
+const OCTANT_HYSTERESIS := 0.15  # fracción extra de OCTANT_STEP que hay que rebasar para cambiar de octante
+
+func _direction_from_vector(v: Vector2, current: Vector2i = Vector2i.ZERO) -> Vector2i:
 	if v.length() < DRAG_DEADZONE:
 		return Vector2i.ZERO
-	const OCTANTS := [
-		Vector2i(1, 0), Vector2i(1, 1), Vector2i(0, 1), Vector2i(-1, 1),
-		Vector2i(-1, 0), Vector2i(-1, -1), Vector2i(0, -1), Vector2i(1, -1),
-	]
-	var octant: int = int(round(v.angle() / (PI / 4.0)))
+	var raw_angle: float = v.angle()
+	if current != Vector2i.ZERO:
+		var current_idx: int = OCTANTS.find(current)
+		if current_idx != -1:
+			var diff: float = wrapf(raw_angle - current_idx * OCTANT_STEP, -PI, PI)
+			if abs(diff) < OCTANT_STEP * (0.5 + OCTANT_HYSTERESIS):
+				return current
+	var octant: int = int(round(raw_angle / OCTANT_STEP))
 	octant = ((octant % 8) + 8) % 8
 	return OCTANTS[octant]
 
@@ -470,7 +495,7 @@ func _update_direction_from_pointer() -> void:
 	if not dragging:
 		return
 	var player_center: Vector2 = Vector2(player_cell) * CELL + Vector2(CELL, CELL) / 2.0
-	current_dir = _direction_from_vector(last_pointer_pos - player_center)
+	current_dir = _direction_from_vector(last_pointer_pos - player_center, current_dir)
 	if current_dir != Vector2i.ZERO:
 		player_view.set_facing(rad_to_deg(atan2(current_dir.x, -current_dir.y)))
 
@@ -570,8 +595,10 @@ func _complete_capture() -> void:
 	# Antes de tocar nada, se reconstruye la región que el jugador acaba de
 	# recorrer -- tratando las celdas de "trail" como si siguieran abiertas,
 	# ya que ahí es donde estaban antes de este trazo. Cualquier "qix" que
-	# esté parado en esa región quedó encerrado por ESTE trazo (sin importar
-	# cuánto espacio le quede adentro) y se divide en dos.
+	# esté parado en esa región quedó encerrado por ESTE trazo: si el
+	# espacio que le queda es chico (lo arrinconaste), muere -- como en el
+	# arcade original -- y esa bolsita también se captura; si le queda
+	# espacio de sobra, se divide en dos en vez de quedarse atrapado inerte.
 	var enclosed_region: Dictionary = {}
 	if not trail.is_empty():
 		_flood_fill_open_or_trail(trail[0], enclosed_region)
@@ -600,7 +627,7 @@ func _complete_capture() -> void:
 	# celda), con un pequeño extra fijo por cerrar el trazo.
 	score += 20 + newly_cells.size() * 2
 	_update_hud()
-	_split_enclosed_enemies(enclosed_region)
+	_resolve_enclosed_enemies(enclosed_region)
 
 	if _capture_percent() >= CAPTURE_TARGET:
 		# Como en el arcade original: se ve el paisaje completo revelado un
@@ -664,11 +691,17 @@ func _flood_fill_open_or_trail(start: Vector2i, region: Dictionary) -> void:
 			stack.append(n)
 
 
-func _split_enclosed_enemies(enclosed_region: Dictionary) -> void:
+func _resolve_enclosed_enemies(enclosed_region: Dictionary) -> void:
 	## Cualquier "qix" parado dentro de la región que este trazo acaba de
-	## delimitar se divide en dos -- en vez de quedarse atrapado/quieto ahí,
-	## como pedía el arcade original. El tope MAX_QIX_ENEMIES evita que una
-	## racha de capturas encadenadas multiplique enemigos sin límite.
+	## delimitar quedó encerrado por ESTE trazo. Lo que le pasa depende del
+	## espacio que le queda para moverse (su propia bolsa "open", ya después
+	## de convertir el trazo/lo no-alcanzable en "captured"):
+	## - Si es chico (lo arrinconaste en un círculo pequeño): muere, como en
+	##   el arcade original -- y esa bolsita también se captura de una vez,
+	##   como bonus por la maniobra.
+	## - Si le queda espacio de sobra: se divide en dos en vez de quedarse
+	##   atrapado/quieto ahí. El tope MAX_QIX_ENEMIES evita que una racha de
+	##   capturas encadenadas multiplique enemigos sin límite.
 	if enclosed_region.is_empty():
 		return
 	var trapped: Array = []
@@ -676,7 +709,26 @@ func _split_enclosed_enemies(enclosed_region: Dictionary) -> void:
 		if e["kind"] == "qix" and enclosed_region.has(e["pos"]):
 			trapped.append(e)
 	for e: Dictionary in trapped:
-		_split_enemy(e)
+		var pocket: Dictionary = {}
+		_flood_fill_from(e["pos"], pocket)
+		if pocket.size() <= SMALL_POCKET_MAX_CELLS:
+			_kill_trapped_enemy(e, pocket)
+		else:
+			_split_enemy(e)
+
+
+func _kill_trapped_enemy(e: Dictionary, pocket: Dictionary) -> void:
+	enemies.erase(e)
+	e["view"].queue_free()
+	# La bolsita donde estaba ya no tiene nada adentro que la excluya de
+	# captura -- se captura también, como el bonus del arcade original por
+	# arrinconar al monstruo en un espacio chico.
+	var cells: Array = pocket.keys()
+	for c: Vector2i in cells:
+		grid_state[c.y][c.x] = "captured"
+	_reveal_new_cells(cells)
+	score += 50 + cells.size() * 2
+	_update_hud()
 
 
 func _split_enemy(e: Dictionary) -> void:
@@ -829,7 +881,9 @@ func _reveal_new_cells(cells: Array) -> void:
 		return
 	if reveal_tween and reveal_tween.is_valid():
 		reveal_tween.kill()
+		_apply_reveal_progress(1.0, reveal_cells)
 	var duration: float = clamp(0.15 + cells.size() * 0.006, 0.2, 0.9)
+	reveal_cells = cells
 	reveal_tween = create_tween()
 	reveal_tween.tween_method(_apply_reveal_progress.bind(cells), 0.0, 1.0, duration)
 
