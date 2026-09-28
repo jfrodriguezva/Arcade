@@ -33,6 +33,7 @@ const LEVEL_TIME_BASE := 75.0
 const LEVEL_TIME_MIN := 42.0
 const SPARX_MIN_LEVEL := 3
 const SPARX_SPEED := 6.0  # celdas de borde por segundo
+const MAX_QIX_ENEMIES := 8  # tope para que una racha de capturas encadenadas no multiplique enemigos sin limite
 const DIAGONAL_FACTOR := 1.41421356  # sqrt(2): un paso diagonal recorre más distancia real,
 	# así que tarda lo mismo por segundo (no "más rápido") que uno recto, igual que en el
 	# arcade original donde el marcador se mueve a velocidad constante en cualquier dirección.
@@ -48,6 +49,7 @@ const HELP_TEXT := "Toca y arrastra en cualquier parte del tablero: el marcador 
 - Al entrar a la zona sin revelar, vas dejando una traza. Si un enemigo toca tu traza antes de que regreses al borde, pierdes una vida y la traza se borra — ojo, esto puede pasar contigo mismo si te acorralas.
 - Uno de los enemigos se vuelve más monstruoso y rápido mientras más tiempo pase en el nivel (se nota en su tamaño y color) — no te tardes.
 - Al volver a tocar zona segura, el área que encerraste se revela como si se corriera una cortina y se captura — a menos que haya un enemigo adentro, ese pedazo se queda sin capturar. Entre más grande el área capturada de una vez, más puntos.
+- Si un enemigo queda encerrado justo en el pedazo que tu trazo acaba de delimitar, no muere: se divide en dos (más chicos, si ya había evolucionado a monstruo vuelve a su forma base) — cuidado con acorralarlos de más.
 - Hay un límite de tiempo por nivel (arriba a la derecha). Si se agota, pierdes una vida y se reinicia el reloj.
 
 Captura el 75% del área para pasar de nivel. Hay 10 niveles, cada uno con más enemigos, más rápidos y menos tiempo. Pierdes si se acaban tus 3 vidas."
@@ -70,6 +72,16 @@ var current_dir: Vector2i = Vector2i.ZERO
 ## punto tocado, redondeada a una de 8 direcciones — no hay botones de
 ## flechas aparte, el display completo es el control.
 var dragging: bool = false
+## Última posición conocida del dedo/mouse mientras se arrastra. La
+## dirección ya no se recalcula solo cuando llega un evento de input
+## (ScreenDrag/MouseMotion) -- se recalcula cada frame en _process a
+## partir de este punto, porque player_cell (la referencia) también
+## avanza cada tick sin generar un evento de input nuevo. Si el dedo se
+## queda quieto justo cuando el marcador lo alcanza o lo rebasa, la
+## dirección leída con el último evento viejo podía apuntar de vuelta
+## hacia la celda recién trazada -- eso era lo que a veces cortaba el
+## trazo con una muerte que no tenía que ver con ningún enemigo.
+var last_pointer_pos: Vector2 = Vector2.ZERO
 var move_timer: float = 0.0
 ## El marcador (y los enemigos) ya no "saltan" de celda en celda: cada
 ## paso se interpola suavemente entre la posición anterior y la nueva a
@@ -287,16 +299,15 @@ func _on_play_area_input(event: InputEvent) -> void:
 		current_dir = Vector2i.ZERO
 		return
 
-	# Se calcula desde la celda lógica (no desde player_view.position, que
-	# está animándose entre celdas) — usar la posición interpolada como
-	# referencia causaba que la dirección calculada "temblara" o se leyera
-	# mal justo cuando el marcador pasaba cerca del punto tocado, por puro
-	# efecto de la animación y no del dedo del jugador. Esto era lo que a
-	# veces hacía que el trazo fallara o se cortara solo.
-	var player_center: Vector2 = Vector2(player_cell) * CELL + Vector2(CELL, CELL) / 2.0
-	current_dir = _direction_from_vector(pos - player_center)
-	if current_dir != Vector2i.ZERO:
-		player_view.set_facing(rad_to_deg(atan2(current_dir.x, -current_dir.y)))
+	# Solo se guarda dónde está el dedo/mouse; la dirección se recalcula
+	# cada frame en _process (ver _update_direction_from_pointer), no aquí.
+	# Antes se calculaba solo cuando llegaba un evento de input nuevo, pero
+	# player_cell avanza cada tick de movimiento SIN generar un evento --
+	# si el dedo se quedaba quieto justo cuando el marcador lo alcanzaba o
+	# lo rebasaba, la dirección se quedaba con el último valor leído (a
+	# veces apuntando de vuelta hacia la celda recién trazada) y el trazo
+	# se cortaba con una muerte que no tenía que ver con ningún enemigo.
+	last_pointer_pos = pos
 
 
 func _new_game() -> void:
@@ -455,10 +466,20 @@ func _capture_percent() -> float:
 	return float(captured) / float(GRID_W * GRID_H) * 100.0
 
 
+func _update_direction_from_pointer() -> void:
+	if not dragging:
+		return
+	var player_center: Vector2 = Vector2(player_cell) * CELL + Vector2(CELL, CELL) / 2.0
+	current_dir = _direction_from_vector(last_pointer_pos - player_center)
+	if current_dir != Vector2i.ZERO:
+		player_view.set_facing(rad_to_deg(atan2(current_dir.x, -current_dir.y)))
+
+
 func _process(delta: float) -> void:
 	if state != "playing":
 		return
 
+	_update_direction_from_pointer()
 	time_left -= delta
 	time_label.text = "⏱ %d" % ceili(max(time_left, 0.0))
 	if time_left <= 0.0:
@@ -546,6 +567,15 @@ func _try_move_player() -> void:
 
 
 func _complete_capture() -> void:
+	# Antes de tocar nada, se reconstruye la región que el jugador acaba de
+	# recorrer -- tratando las celdas de "trail" como si siguieran abiertas,
+	# ya que ahí es donde estaban antes de este trazo. Cualquier "qix" que
+	# esté parado en esa región quedó encerrado por ESTE trazo (sin importar
+	# cuánto espacio le quede adentro) y se divide en dos.
+	var enclosed_region: Dictionary = {}
+	if not trail.is_empty():
+		_flood_fill_open_or_trail(trail[0], enclosed_region)
+
 	var reachable: Dictionary = {}
 	for e: Dictionary in enemies:
 		if e["kind"] == "qix":
@@ -570,6 +600,7 @@ func _complete_capture() -> void:
 	# celda), con un pequeño extra fijo por cerrar el trazo.
 	score += 20 + newly_cells.size() * 2
 	_update_hud()
+	_split_enclosed_enemies(enclosed_region)
 
 	if _capture_percent() >= CAPTURE_TARGET:
 		# Como en el arcade original: se ve el paisaje completo revelado un
@@ -606,6 +637,81 @@ func _flood_fill_from(start: Vector2i, reachable: Dictionary) -> void:
 				continue
 			reachable[n] = true
 			stack.append(n)
+
+
+func _flood_fill_open_or_trail(start: Vector2i, region: Dictionary) -> void:
+	## Como _flood_fill_from, pero cuenta tanto "open" como "trail" como
+	## transitable -- se usa ANTES de convertir el trazo recién cerrado en
+	## "captured", para saber qué celdas formaban parte de la misma bolsa
+	## abierta que el jugador acaba de recorrer (ver _complete_capture).
+	var s0: String = grid_state[start.y][start.x]
+	if s0 != "open" and s0 != "trail":
+		return
+	var stack: Array = [start]
+	region[start] = true
+	while not stack.is_empty():
+		var cur: Vector2i = stack.pop_back()
+		for d: Vector2i in DIRS:
+			var n: Vector2i = cur + d
+			if n.x < 0 or n.x >= GRID_W or n.y < 0 or n.y >= GRID_H:
+				continue
+			if region.has(n):
+				continue
+			var ns: String = grid_state[n.y][n.x]
+			if ns != "open" and ns != "trail":
+				continue
+			region[n] = true
+			stack.append(n)
+
+
+func _split_enclosed_enemies(enclosed_region: Dictionary) -> void:
+	## Cualquier "qix" parado dentro de la región que este trazo acaba de
+	## delimitar se divide en dos -- en vez de quedarse atrapado/quieto ahí,
+	## como pedía el arcade original. El tope MAX_QIX_ENEMIES evita que una
+	## racha de capturas encadenadas multiplique enemigos sin límite.
+	if enclosed_region.is_empty():
+		return
+	var trapped: Array = []
+	for e: Dictionary in enemies:
+		if e["kind"] == "qix" and enclosed_region.has(e["pos"]):
+			trapped.append(e)
+	for e: Dictionary in trapped:
+		_split_enemy(e)
+
+
+func _split_enemy(e: Dictionary) -> void:
+	var qix_count := 0
+	for other: Dictionary in enemies:
+		if other["kind"] == "qix":
+			qix_count += 1
+	if qix_count >= MAX_QIX_ENEMIES:
+		return
+
+	# El original se "encoge" de vuelta a la forma base -- si ya había
+	# evolucionado a monstruo, dividirse lo vuelve más chico y débil otra
+	# vez, no premia con dos monstruos grandes de un solo golpe. Sigue
+	# siendo el único candidato a evolucionar de nuevo (is_lead no cambia).
+	var base: Dictionary = MONSTER_STAGES[0]
+	e["monster_stage"] = 0
+	e["interval"] = e["base_interval"]
+	e["dir"] = _random_dir()
+	var sz: float = CELL * 0.88 * float(base["scale"])
+	e["view"].size = Vector2(sz, sz)
+	e["view"].setup(base["shape"], base["color"], base["color2"], e["view"].seed_i)
+
+	var view := EntitySprite.new()
+	view.size = Vector2(sz, sz)
+	view.position = e["view"].position
+	view.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	view.setup(base["shape"], base["color"], base["color2"], enemies.size())
+	play_area.add_child(view)
+	var pix: Vector2 = e["view"].position
+	enemies.append({
+		"kind": "qix", "pos": e["pos"], "dir": _random_dir(), "view": view,
+		"interval": e["base_interval"], "timer": 0.0, "phase": randf(),
+		"prev_pixel": pix, "target_pixel": pix,
+		"is_lead": false, "monster_stage": 0, "base_interval": e["base_interval"],
+	})
 
 
 func _move_enemy(e: Dictionary) -> void:
