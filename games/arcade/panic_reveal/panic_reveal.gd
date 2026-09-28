@@ -82,6 +82,20 @@ var trail: Array = []
 var trail_origin: Vector2i = Vector2i.ZERO
 var trail_line: Line2D
 var drone_phase: float = 0.0
+## Tween de la "cortina" de revelado (_reveal_new_cells). Si al cerrar el
+## área que completa el nivel se lanza _setup_level() mientras esta tween
+## sigue viva, sigue pintando celdas del nivel VIEJO sobre mask_image/
+## mask_texture (el mismo objeto, reusado entre niveles) después de que ya
+## se reseteó para el nivel nuevo -- eso es lo que hacía que el nivel
+## siguiente apareciera con parches ya revelados y la transición se viera
+## congelada a medias. _complete_capture ahora espera a que termine antes
+## de avanzar de nivel.
+var reveal_tween: Tween = null
+## Se incrementa cada vez que arranca una partida nueva. _complete_capture
+## lo captura antes de esperar la pausa de "nivel completo"; si cambió al
+## despertar (el jugador le dio a "Nueva partida" en medio de la espera),
+## esa espera quedó obsoleta y no debe pisar la partida que ya arrancó.
+var game_session: int = 0
 
 var enemies: Array = []
 var perimeter_cells: Array = []
@@ -286,6 +300,7 @@ func _on_play_area_input(event: InputEvent) -> void:
 
 
 func _new_game() -> void:
+	game_session += 1
 	score = 0
 	lives = 3
 	level = 1
@@ -557,6 +572,20 @@ func _complete_capture() -> void:
 	_update_hud()
 
 	if _capture_percent() >= CAPTURE_TARGET:
+		# Como en el arcade original: se ve el paisaje completo revelado un
+		# momento antes de pasar de nivel, en vez de cortar la animación a
+		# medias. Se bloquea el juego (state != "playing") mientras se
+		# espera, y solo hasta que la cortina terminó de verdad se resetea
+		# todo para el nivel nuevo -- así nunca hay una tween vieja viva
+		# escribiendo sobre la máscara del nivel nuevo.
+		state = "level_complete"
+		status_label.text = "¡Nivel %d completo!" % level
+		var session: int = game_session
+		if reveal_tween and reveal_tween.is_valid():
+			await reveal_tween.finished
+		await get_tree().create_timer(0.85).timeout
+		if session != game_session:
+			return
 		_advance_level()
 
 
@@ -653,6 +682,7 @@ func _advance_level() -> void:
 		_win()
 		return
 	level += 1
+	state = "playing"
 	_setup_level()
 
 
@@ -691,9 +721,11 @@ func _reveal_new_cells(cells: Array) -> void:
 	## a la "cortina" que antes barría celda por celda.
 	if cells.is_empty():
 		return
+	if reveal_tween and reveal_tween.is_valid():
+		reveal_tween.kill()
 	var duration: float = clamp(0.15 + cells.size() * 0.006, 0.2, 0.9)
-	var tw := create_tween()
-	tw.tween_method(_apply_reveal_progress.bind(cells), 0.0, 1.0, duration)
+	reveal_tween = create_tween()
+	reveal_tween.tween_method(_apply_reveal_progress.bind(cells), 0.0, 1.0, duration)
 
 
 func _apply_reveal_progress(t: float, cells: Array) -> void:
