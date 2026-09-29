@@ -7,6 +7,11 @@ shader_type canvas_item;
 // las montañas (smoothstep en vez de un corte duro).
 
 uniform float level = 1.0;
+// Barra chica/monstruo (ver panic_reveal.gd): 0 = normal, 1 = "modo
+// monstruo" a full -- cuando la barra cae del lado monstruo, todo el
+// paisaje revelado se tiñe de rojo/oscuro como aviso, imitando el cambio
+// de imagen a "monstruo" del arcade original.
+uniform float panic = 0.0;
 
 void fragment() {
 	vec2 uv = UV;
@@ -30,6 +35,9 @@ void fragment() {
 
 	float sun_mask = 1.0 - smoothstep(0.085, 0.098, sun_dist);
 	col = mix(col, vec3(1.0, 0.9, 0.55), sun_mask);
+
+	vec3 monster_col = mix(col * 0.4, vec3(0.45, 0.03, 0.06), 0.6);
+	col = mix(col, monster_col, panic);
 
 	COLOR = vec4(col, 1.0);
 }

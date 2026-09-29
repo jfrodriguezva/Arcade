@@ -23,7 +23,7 @@ const GRID_H := 27
 const CELL := 34.0
 const DRAG_DEADZONE := 12.0  # tan cerca del marcador que no se distingue direccion
 const MOVE_INTERVAL := 0.09
-const CAPTURE_TARGET := 75.0
+const CAPTURE_TARGET := 80.0  # el arcade original pide 80%, no 75%
 const MAX_LEVEL := 10
 const DIRS := [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]
 const DRONE_SPIN_IDLE := 0.7   # vueltas/seg cuando el marcador está en zona segura
@@ -33,8 +33,17 @@ const LEVEL_TIME_BASE := 75.0
 const LEVEL_TIME_MIN := 42.0
 const SPARX_MIN_LEVEL := 3
 const SPARX_SPEED := 6.0  # celdas de borde por segundo
-const MAX_QIX_ENEMIES := 8  # tope para que una racha de capturas encadenadas no multiplique enemigos sin limite
-const SMALL_POCKET_MAX_CELLS := 16  # bolsa de este tamano o menos = "circulo pequeno": el qix muere en vez de dividirse
+# --- Barra "chica/monstruo" (la mecánica que le da nombre al juego: Panic) -
+# Revelar la silueta ("sujeto") empuja la barra hacia monstruo; revelar
+# fondo la regresa hacia chica; y se va hacia monstruo sola con el tiempo.
+# Si llegas a la meta de captura con la barra del lado monstruo, el arcade
+# original NO da el nivel por completado -- hay que seguir revelando fondo
+# hasta recuperarla.
+const PANIC_START := 0.7
+const PANIC_DRIFT_PER_SEC := 0.012
+const PANIC_SUBJECT_PENALTY := 0.02   # por celda de silueta revelada
+const PANIC_BACKGROUND_BONUS := 0.012  # por celda de fondo revelado
+const PANIC_MONSTER_THRESHOLD := 0.32
 const DIAGONAL_FACTOR := 1.41421356  # sqrt(2): un paso diagonal recorre más distancia real,
 	# así que tarda lo mismo por segundo (no "más rápido") que uno recto, igual que en el
 	# arcade original donde el marcador se mueve a velocidad constante en cualquier dirección.
@@ -48,12 +57,13 @@ const HELP_TEXT := "Toca y arrastra en cualquier parte del tablero: el marcador 
 
 - Mientras estés en el borde o en zona ya capturada, estás a salvo... de los enemigos rojos. Desde el nivel 3 patrullan el borde exterior unos centinelas violeta (Sparx): si te tocan, aunque estés en zona 'segura', pierdes una vida igual.
 - Al entrar a la zona sin revelar, vas dejando una traza. Si un enemigo toca tu traza antes de que regreses al borde, pierdes una vida y la traza se borra — ojo, esto puede pasar contigo mismo si te acorralas.
-- Uno de los enemigos se vuelve más monstruoso y rápido mientras más tiempo pase en el nivel (se nota en su tamaño y color) — no te tardes.
-- Al volver a tocar zona segura, el área que encerraste se revela como si se corriera una cortina y se captura — a menos que haya un enemigo adentro, ese pedazo se queda sin capturar. Entre más grande el área capturada de una vez, más puntos.
-- Si un enemigo queda encerrado justo en el pedazo que tu trazo acaba de delimitar, no muere: se divide en dos (más chicos, si ya había evolucionado a monstruo vuelve a su forma base) — cuidado con acorralarlos de más.
+- Uno de los enemigos es el jefe: se vuelve más monstruoso y rápido mientras más tiempo pase en el nivel, y su zona nunca se puede capturar mientras siga vivo — rodéalo, no lo enfrentes de más.
+- Los demás enemigos SÍ mueren si quedan dentro de un área que capturas, sin importar qué tan grande sea esa área.
+- Al volver a tocar zona segura, el área que encerraste se revela como si se corriera una cortina y se captura. Entre más grande el área capturada de una vez, más puntos.
+- Arriba hay una barra chica/monstruo: revelar la silueta la empuja hacia monstruo, revelar el fondo (todo lo que no es la silueta) la regresa, y se va sola hacia monstruo con el tiempo. Si llegas al 80% con la barra del lado monstruo, el nivel NO se completa todavía — sigue revelando fondo hasta recuperarla.
 - Hay un límite de tiempo por nivel (arriba a la derecha). Si se agota, pierdes una vida y se reinicia el reloj.
 
-Captura el 75% del área para pasar de nivel. Hay 10 niveles, cada uno con más enemigos, más rápidos y menos tiempo. Pierdes si se acaban tus 3 vidas."
+Captura el 80% del área (con la barra del lado chica) para pasar de nivel. Hay 10 niveles, cada uno con más enemigos, más rápidos y menos tiempo. Pierdes si se acaban tus 3 vidas."
 
 var grid_state: Array = []
 ## El paisaje ya no se pinta celda por celda: landscape_bg lo dibuja con un
@@ -65,6 +75,17 @@ var landscape_bg: ColorRect
 var cover_layer: ColorRect
 var mask_image: Image
 var mask_texture: ImageTexture
+## "Sujeto" = la silueta central (cabeza+cuerpo, como la chica del original)
+## cuyas celdas cuentan distinto que el fondo para la barra chica/monstruo
+## (ver _build_subject_mask). Se dibuja como un tinte sutil sobre lo que
+## sigue sin revelar en esa zona, para que se pueda planear la ruta.
+var subject_mask: Dictionary = {}
+var subject_image: Image
+var subject_texture: ImageTexture
+## 1.0 = totalmente del lado "chica" (seguro), 0.0 = totalmente "monstruo".
+## Ver PANIC_* arriba y _update_panic_gauge/_update_panic_visual.
+var panic_gauge: float = PANIC_START
+var panic_in_monster: bool = false
 
 var player_cell: Vector2i = Vector2i.ZERO
 var current_dir: Vector2i = Vector2i.ZERO
@@ -132,6 +153,8 @@ var lives_label: Label
 var status_label: Label
 var percent_label: Label
 var percent_bar: ProgressBar
+var panic_bar: ProgressBar
+var panic_icon_label: Label
 var time_label: Label
 
 
@@ -201,6 +224,22 @@ func _build_ui() -> void:
 	percent_label = UIKit.title_label("0%% / %d%%" % int(CAPTURE_TARGET), 12, UIKit.COLOR_ACCENT_2)
 	progress_row.add_child(percent_label)
 
+	# Barra chica/monstruo (la mecánica "Panic" del original): revelar la
+	# silueta la empuja hacia monstruo, revelar fondo la regresa.
+	var panic_row := HBoxContainer.new()
+	panic_row.add_theme_constant_override("separation", 8)
+	hud_vbox.add_child(panic_row)
+	panic_icon_label = UIKit.title_label("😊", 14, UIKit.COLOR_TEXT)
+	panic_row.add_child(panic_icon_label)
+	panic_bar = ProgressBar.new()
+	panic_bar.custom_minimum_size = Vector2(0, 10)
+	panic_bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	panic_bar.max_value = 100.0
+	panic_bar.show_percentage = false
+	panic_bar.add_theme_stylebox_override("background", UIKit.stylebox(UIKit.COLOR_BG, Color(0, 0, 0, 0), 6))
+	panic_bar.add_theme_stylebox_override("fill", UIKit.stylebox(UIKit.COLOR_ACCENT_2, Color(0, 0, 0, 0), 6))
+	panic_row.add_child(panic_bar)
+
 	var play_panel := PanelContainer.new()
 	play_panel.add_theme_stylebox_override("panel", UIKit.stylebox(UIKit.COLOR_PANEL, UIKit.COLOR_ACCENT_3, 10, 2))
 	vbox.add_child(play_panel)
@@ -227,6 +266,8 @@ func _build_ui() -> void:
 
 	mask_image = Image.create(GRID_W, GRID_H, false, Image.FORMAT_R8)
 	mask_texture = ImageTexture.create_from_image(mask_image)
+	subject_image = Image.create(GRID_W, GRID_H, false, Image.FORMAT_R8)
+	subject_texture = ImageTexture.create_from_image(subject_image)
 
 	cover_layer = ColorRect.new()
 	cover_layer.size = board_size
@@ -234,6 +275,7 @@ func _build_ui() -> void:
 	cover_layer.material = ShaderMaterial.new()
 	cover_layer.material.shader = load("res://games/arcade/panic_reveal/cover_mask.gdshader")
 	cover_layer.material.set_shader_parameter("mask_tex", mask_texture)
+	cover_layer.material.set_shader_parameter("subject_tex", subject_texture)
 	play_area.add_child(cover_layer)
 
 	# La traza activa ya no se pinta celda por celda (eso es lo que se veía
@@ -354,6 +396,11 @@ func _setup_level() -> void:
 		grid_state.append(row)
 	landscape_bg.material.set_shader_parameter("level", float(level))
 	_rebuild_mask()
+	_build_subject_mask()
+	panic_gauge = PANIC_START
+	panic_in_monster = false
+	status_label.remove_theme_color_override("font_color")
+	_update_panic_visual()
 
 	player_cell = Vector2i(0, 0)
 	current_dir = Vector2i.ZERO
@@ -491,6 +538,59 @@ func _capture_percent() -> float:
 	return float(captured) / float(GRID_W * GRID_H) * 100.0
 
 
+func _build_subject_mask() -> void:
+	## Silueta central (cabeza + cuerpo) que hace de "sujeto" para la barra
+	## chica/monstruo -- el original usa la foto de la chica, acá usamos una
+	## forma simple ya que el arte es paisaje procedural. Misma forma cada
+	## nivel, centrada, para que el jugador aprenda a ubicarla.
+	subject_mask.clear()
+	var cx: float = GRID_W / 2.0
+	var head_cy: float = GRID_H * 0.28
+	var head_r: float = GRID_W * 0.115
+	var body_cy: float = GRID_H * 0.58
+	var body_rx: float = GRID_W * 0.155
+	var body_ry: float = GRID_H * 0.225
+	for y in range(1, GRID_H - 1):
+		for x in range(1, GRID_W - 1):
+			var dx: float = x - cx
+			var head_dy: float = y - head_cy
+			var in_head: bool = dx * dx + head_dy * head_dy <= head_r * head_r
+			var body_dy: float = y - body_cy
+			var in_body: bool = (dx * dx) / (body_rx * body_rx) + (body_dy * body_dy) / (body_ry * body_ry) <= 1.0
+			if in_head or in_body:
+				subject_mask[Vector2i(x, y)] = true
+	for y in range(GRID_H):
+		for x in range(GRID_W):
+			var v: float = 1.0 if subject_mask.has(Vector2i(x, y)) else 0.0
+			subject_image.set_pixel(x, y, Color(v, v, v))
+	subject_texture.update(subject_image)
+
+
+func _update_panic_gauge(cells: Array) -> void:
+	## Revelar silueta empuja la barra a "monstruo"; revelar fondo la regresa
+	## a "chica" -- la tensión central del arcade original (de ahí "Panic").
+	for c: Vector2i in cells:
+		if subject_mask.has(c):
+			panic_gauge -= PANIC_SUBJECT_PENALTY
+		else:
+			panic_gauge += PANIC_BACKGROUND_BONUS
+	panic_gauge = clamp(panic_gauge, 0.0, 1.0)
+	_update_panic_visual()
+
+
+func _update_panic_visual() -> void:
+	panic_bar.value = panic_gauge * 100.0
+	var now_in_monster: bool = panic_gauge < PANIC_MONSTER_THRESHOLD
+	var intensity: float = 0.0
+	if now_in_monster:
+		intensity = clamp((PANIC_MONSTER_THRESHOLD - panic_gauge) / PANIC_MONSTER_THRESHOLD, 0.0, 1.0)
+	landscape_bg.material.set_shader_parameter("panic", intensity)
+	if now_in_monster != panic_in_monster:
+		panic_in_monster = now_in_monster
+		panic_bar.add_theme_stylebox_override("fill", UIKit.stylebox(UIKit.COLOR_DANGER if panic_in_monster else UIKit.COLOR_ACCENT_2, Color(0, 0, 0, 0), 6))
+		panic_icon_label.text = "👹" if panic_in_monster else "😊"
+
+
 func _update_direction_from_pointer() -> void:
 	if not dragging:
 		return
@@ -505,6 +605,8 @@ func _process(delta: float) -> void:
 		return
 
 	_update_direction_from_pointer()
+	panic_gauge = clamp(panic_gauge - PANIC_DRIFT_PER_SEC * delta, 0.0, 1.0)
+	_update_panic_visual()
 	time_left -= delta
 	time_label.text = "⏱ %d" % ceili(max(time_left, 0.0))
 	if time_left <= 0.0:
@@ -592,20 +694,15 @@ func _try_move_player() -> void:
 
 
 func _complete_capture() -> void:
-	# Antes de tocar nada, se reconstruye la región que el jugador acaba de
-	# recorrer -- tratando las celdas de "trail" como si siguieran abiertas,
-	# ya que ahí es donde estaban antes de este trazo. Cualquier "qix" que
-	# esté parado en esa región quedó encerrado por ESTE trazo: si el
-	# espacio que le queda es chico (lo arrinconaste), muere -- como en el
-	# arcade original -- y esa bolsita también se captura; si le queda
-	# espacio de sobra, se divide en dos en vez de quedarse atrapado inerte.
-	var enclosed_region: Dictionary = {}
-	if not trail.is_empty():
-		_flood_fill_open_or_trail(trail[0], enclosed_region)
-
+	# Solo el jefe (is_lead) excluye su bolsa de la captura, como el Qix
+	# clásico -- hay que rodearlo, nunca se le puede matar encerrándolo. Los
+	# demás enemigos NO bloquean nada: si su celda queda capturada, mueren
+	# ahí mismo, sin importar qué tan grande sea el área (ver
+	# _kill_enemies_in_cells más abajo) -- así es el original, no como el
+	# Qix clásico donde cualquier enemigo dentro excluye su zona.
 	var reachable: Dictionary = {}
 	for e: Dictionary in enemies:
-		if e["kind"] == "qix":
+		if e["kind"] == "qix" and e.get("is_lead", false):
 			_flood_fill_from(e["pos"], reachable)
 
 	var newly_cells: Array = []
@@ -626,25 +723,37 @@ func _complete_capture() -> void:
 	# arcade original: capturas grandes valen mucho más que ir celda a
 	# celda), con un pequeño extra fijo por cerrar el trazo.
 	score += 20 + newly_cells.size() * 2
+	_update_panic_gauge(newly_cells)
 	_update_hud()
-	_resolve_enclosed_enemies(enclosed_region)
+	_kill_enemies_in_cells(newly_cells)
 
-	if _capture_percent() >= CAPTURE_TARGET:
-		# Como en el arcade original: se ve el paisaje completo revelado un
-		# momento antes de pasar de nivel, en vez de cortar la animación a
-		# medias. Se bloquea el juego (state != "playing") mientras se
-		# espera, y solo hasta que la cortina terminó de verdad se resetea
-		# todo para el nivel nuevo -- así nunca hay una tween vieja viva
-		# escribiendo sobre la máscara del nivel nuevo.
-		state = "level_complete"
-		status_label.text = "¡Nivel %d completo!" % level
-		var session: int = game_session
-		if reveal_tween and reveal_tween.is_valid():
-			await reveal_tween.finished
-		await get_tree().create_timer(0.85).timeout
-		if session != game_session:
-			return
-		_advance_level()
+	if _capture_percent() < CAPTURE_TARGET:
+		return
+
+	if panic_gauge < PANIC_MONSTER_THRESHOLD:
+		# Como en el arcade original: llegar a la meta con la barra del lado
+		# "monstruo" no completa el nivel -- hay que seguir revelando fondo
+		# (no la silueta) hasta recuperarla y volver a cerrar un trazo.
+		status_label.text = "¡Se volvió monstruo! Revela fondo para recuperarla"
+		status_label.add_theme_color_override("font_color", UIKit.COLOR_DANGER)
+		return
+
+	# Como en el arcade original: se ve el paisaje completo revelado un
+	# momento antes de pasar de nivel, en vez de cortar la animación a
+	# medias. Se bloquea el juego (state != "playing") mientras se espera, y
+	# solo hasta que la cortina terminó de verdad se resetea todo para el
+	# nivel nuevo -- así nunca hay una tween vieja viva escribiendo sobre la
+	# máscara del nivel nuevo.
+	state = "level_complete"
+	status_label.remove_theme_color_override("font_color")
+	status_label.text = "¡Nivel %d completo!" % level
+	var session: int = game_session
+	if reveal_tween and reveal_tween.is_valid():
+		await reveal_tween.finished
+	await get_tree().create_timer(0.85).timeout
+	if session != game_session:
+		return
+	_advance_level()
 
 
 func _flood_fill_from(start: Vector2i, reachable: Dictionary) -> void:
@@ -666,104 +775,24 @@ func _flood_fill_from(start: Vector2i, reachable: Dictionary) -> void:
 			stack.append(n)
 
 
-func _flood_fill_open_or_trail(start: Vector2i, region: Dictionary) -> void:
-	## Como _flood_fill_from, pero cuenta tanto "open" como "trail" como
-	## transitable -- se usa ANTES de convertir el trazo recién cerrado en
-	## "captured", para saber qué celdas formaban parte de la misma bolsa
-	## abierta que el jugador acaba de recorrer (ver _complete_capture).
-	var s0: String = grid_state[start.y][start.x]
-	if s0 != "open" and s0 != "trail":
+func _kill_enemies_in_cells(cells: Array) -> void:
+	## Como en el arcade original: cualquier enemigo (menos el jefe) que
+	## quede dentro del área que se acaba de capturar muere ahí mismo -- sin
+	## importar el tamaño del área. No se divide: esa mecánica la inventé
+	## mal en un pase anterior, no es del juego real.
+	if cells.is_empty():
 		return
-	var stack: Array = [start]
-	region[start] = true
-	while not stack.is_empty():
-		var cur: Vector2i = stack.pop_back()
-		for d: Vector2i in DIRS:
-			var n: Vector2i = cur + d
-			if n.x < 0 or n.x >= GRID_W or n.y < 0 or n.y >= GRID_H:
-				continue
-			if region.has(n):
-				continue
-			var ns: String = grid_state[n.y][n.x]
-			if ns != "open" and ns != "trail":
-				continue
-			region[n] = true
-			stack.append(n)
-
-
-func _resolve_enclosed_enemies(enclosed_region: Dictionary) -> void:
-	## Cualquier "qix" parado dentro de la región que este trazo acaba de
-	## delimitar quedó encerrado por ESTE trazo. Lo que le pasa depende del
-	## espacio que le queda para moverse (su propia bolsa "open", ya después
-	## de convertir el trazo/lo no-alcanzable en "captured"):
-	## - Si es chico (lo arrinconaste en un círculo pequeño): muere, como en
-	##   el arcade original -- y esa bolsita también se captura de una vez,
-	##   como bonus por la maniobra.
-	## - Si le queda espacio de sobra: se divide en dos en vez de quedarse
-	##   atrapado/quieto ahí. El tope MAX_QIX_ENEMIES evita que una racha de
-	##   capturas encadenadas multiplique enemigos sin límite.
-	if enclosed_region.is_empty():
-		return
-	var trapped: Array = []
-	for e: Dictionary in enemies:
-		if e["kind"] == "qix" and enclosed_region.has(e["pos"]):
-			trapped.append(e)
-	for e: Dictionary in trapped:
-		var pocket: Dictionary = {}
-		_flood_fill_from(e["pos"], pocket)
-		if pocket.size() <= SMALL_POCKET_MAX_CELLS:
-			_kill_trapped_enemy(e, pocket)
-		else:
-			_split_enemy(e)
-
-
-func _kill_trapped_enemy(e: Dictionary, pocket: Dictionary) -> void:
-	enemies.erase(e)
-	e["view"].queue_free()
-	# La bolsita donde estaba ya no tiene nada adentro que la excluya de
-	# captura -- se captura también, como el bonus del arcade original por
-	# arrinconar al monstruo en un espacio chico.
-	var cells: Array = pocket.keys()
+	var captured_now: Dictionary = {}
 	for c: Vector2i in cells:
-		grid_state[c.y][c.x] = "captured"
-	_reveal_new_cells(cells)
-	score += 50 + cells.size() * 2
+		captured_now[c] = true
+	for e: Dictionary in enemies.duplicate():
+		if e["kind"] != "qix" or e.get("is_lead", false):
+			continue
+		if captured_now.has(e["pos"]):
+			enemies.erase(e)
+			e["view"].queue_free()
+			score += 30
 	_update_hud()
-
-
-func _split_enemy(e: Dictionary) -> void:
-	var qix_count := 0
-	for other: Dictionary in enemies:
-		if other["kind"] == "qix":
-			qix_count += 1
-	if qix_count >= MAX_QIX_ENEMIES:
-		return
-
-	# El original se "encoge" de vuelta a la forma base -- si ya había
-	# evolucionado a monstruo, dividirse lo vuelve más chico y débil otra
-	# vez, no premia con dos monstruos grandes de un solo golpe. Sigue
-	# siendo el único candidato a evolucionar de nuevo (is_lead no cambia).
-	var base: Dictionary = MONSTER_STAGES[0]
-	e["monster_stage"] = 0
-	e["interval"] = e["base_interval"]
-	e["dir"] = _random_dir()
-	var sz: float = CELL * 0.88 * float(base["scale"])
-	e["view"].size = Vector2(sz, sz)
-	e["view"].setup(base["shape"], base["color"], base["color2"], e["view"].seed_i)
-
-	var view := EntitySprite.new()
-	view.size = Vector2(sz, sz)
-	view.position = e["view"].position
-	view.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	view.setup(base["shape"], base["color"], base["color2"], enemies.size())
-	play_area.add_child(view)
-	var pix: Vector2 = e["view"].position
-	enemies.append({
-		"kind": "qix", "pos": e["pos"], "dir": _random_dir(), "view": view,
-		"interval": e["base_interval"], "timer": 0.0, "phase": randf(),
-		"prev_pixel": pix, "target_pixel": pix,
-		"is_lead": false, "monster_stage": 0, "base_interval": e["base_interval"],
-	})
 
 
 func _move_enemy(e: Dictionary) -> void:

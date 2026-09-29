@@ -15,9 +15,17 @@ shader_type canvas_item;
 // recortado a [0,1] por seguridad numérica.
 
 uniform sampler2D mask_tex: filter_linear, repeat_disable;
+uniform sampler2D subject_tex: filter_linear, repeat_disable;
 uniform vec4 cover_color: source_color = vec4(0.145, 0.157, 0.204, 1.0);
+// Tinte sutil sobre la silueta ("sujeto") mientras sigue tapada, para que
+// se pueda planear la ruta sin tener que adivinar dónde está -- el
+// original usa una foto real donde el contorno se nota solo; acá el arte
+// es paisaje procedural, así que se marca con un tinte discreto.
+uniform vec4 subject_tint: source_color = vec4(0.85, 0.35, 0.55, 1.0);
 
 void fragment() {
 	float revealed = clamp(texture(mask_tex, UV).r, 0.0, 1.0);
-	COLOR = vec4(cover_color.rgb, 1.0 - revealed);
+	float subject = texture(subject_tex, UV).r;
+	vec3 base = mix(cover_color.rgb, subject_tint.rgb, subject * 0.35);
+	COLOR = vec4(base, 1.0 - revealed);
 }
