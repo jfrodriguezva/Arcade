@@ -61,6 +61,7 @@ const HELP_TEXT := "Toca y arrastra en cualquier parte del tablero: el marcador 
 - Los demás enemigos SÍ mueren si quedan dentro de un área que capturas, sin importar qué tan grande sea esa área.
 - Al volver a tocar zona segura, el área que encerraste se revela como si se corriera una cortina y se captura. Entre más grande el área capturada de una vez, más puntos.
 - Arriba hay una barra chica/monstruo: revelar la silueta la empuja hacia monstruo, revelar el fondo (todo lo que no es la silueta) la regresa, y se va sola hacia monstruo con el tiempo. Si llegas al 80% con la barra del lado monstruo, el nivel NO se completa todavía — sigue revelando fondo hasta recuperarla.
+- Cada nivel esconde una ☄️ tormenta de asteroides bajo alguna celda de fondo. Al revelarla, destruye a todos los enemigos chicos en pantalla (el jefe es inmune).
 - Hay un límite de tiempo por nivel (arriba a la derecha). Si se agota, pierdes una vida y se reinicia el reloj.
 
 Captura el 80% del área (con la barra del lado chica) para pasar de nivel. Hay 10 niveles, cada uno con más enemigos, más rápidos y menos tiempo. Pierdes si se acaban tus 3 vidas."
@@ -86,6 +87,12 @@ var subject_texture: ImageTexture
 ## Ver PANIC_* arriba y _update_panic_gauge/_update_panic_visual.
 var panic_gauge: float = PANIC_START
 var panic_in_monster: bool = false
+## Ítem "tormenta de asteroides": una celda de fondo al azar por nivel que,
+## al revelarse, destruye a todos los enemigos chicos en pantalla (el jefe
+## es inmune). bonus_icon_view aparece un instante ahí para avisar.
+var bonus_cell: Vector2i = Vector2i(-1, -1)
+var bonus_triggered: bool = false
+var bonus_icon_view: Label
 
 var player_cell: Vector2i = Vector2i.ZERO
 var current_dir: Vector2i = Vector2i.ZERO
@@ -278,6 +285,19 @@ func _build_ui() -> void:
 	cover_layer.material.set_shader_parameter("subject_tex", subject_texture)
 	play_area.add_child(cover_layer)
 
+	# Ítem bonus "tormenta de asteroides" del original: oculto bajo una
+	# celda de fondo al azar cada nivel, aparece un instante al revelarse y
+	# destruye a todos los enemigos chicos en pantalla (el jefe es inmune,
+	# igual que a la captura).
+	bonus_icon_view = UIKit.title_label("☄️", 20, UIKit.COLOR_TEXT)
+	bonus_icon_view.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	bonus_icon_view.custom_minimum_size = Vector2(CELL, CELL)
+	bonus_icon_view.size = Vector2(CELL, CELL)
+	bonus_icon_view.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	bonus_icon_view.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	bonus_icon_view.modulate.a = 0.0
+	play_area.add_child(bonus_icon_view)
+
 	# La traza activa ya no se pinta celda por celda (eso es lo que se veía
 	# "cuadriculado"): es una sola línea suave tipo trazo de pluma, que
 	# sigue la posición interpolada del marcador en vez de saltar de
@@ -401,6 +421,7 @@ func _setup_level() -> void:
 	panic_in_monster = false
 	status_label.remove_theme_color_override("font_color")
 	_update_panic_visual()
+	_pick_bonus_cell()
 
 	player_cell = Vector2i(0, 0)
 	current_dir = Vector2i.ZERO
@@ -566,6 +587,40 @@ func _build_subject_mask() -> void:
 	subject_texture.update(subject_image)
 
 
+func _pick_bonus_cell() -> void:
+	## Elige una celda de fondo (fuera de la silueta) al azar para esconder
+	## ahí la "tormenta de asteroides" de este nivel.
+	bonus_triggered = false
+	bonus_icon_view.modulate.a = 0.0
+	var candidates: Array = []
+	for y in range(1, GRID_H - 1):
+		for x in range(1, GRID_W - 1):
+			var c := Vector2i(x, y)
+			if not subject_mask.has(c):
+				candidates.append(c)
+	bonus_cell = candidates[randi() % candidates.size()]
+	bonus_icon_view.position = Vector2(bonus_cell) * CELL + Vector2(CELL, CELL) / 2.0 - bonus_icon_view.size / 2.0
+
+
+func _trigger_asteroid_storm() -> void:
+	## Ítem bonus del original: destruye a todos los enemigos chicos en
+	## pantalla de un jalón (el jefe es inmune, igual que a la captura).
+	bonus_triggered = true
+	var tw := create_tween()
+	tw.tween_property(bonus_icon_view, "modulate:a", 1.0, 0.15)
+	tw.tween_interval(0.5)
+	tw.tween_property(bonus_icon_view, "modulate:a", 0.0, 0.4)
+
+	for e: Dictionary in enemies.duplicate():
+		if e["kind"] != "qix" or e.get("is_lead", false):
+			continue
+		enemies.erase(e)
+		e["view"].queue_free()
+		score += 40
+	_update_hud()
+	AudioManager.play_win()
+
+
 func _update_panic_gauge(cells: Array) -> void:
 	## Revelar silueta empuja la barra a "monstruo"; revelar fondo la regresa
 	## a "chica" -- la tensión central del arcade original (de ahí "Panic").
@@ -723,6 +778,8 @@ func _complete_capture() -> void:
 	# arcade original: capturas grandes valen mucho más que ir celda a
 	# celda), con un pequeño extra fijo por cerrar el trazo.
 	score += 20 + newly_cells.size() * 2
+	if not bonus_triggered and grid_state[bonus_cell.y][bonus_cell.x] == "captured":
+		_trigger_asteroid_storm()
 	_update_panic_gauge(newly_cells)
 	_update_hud()
 	_kill_enemies_in_cells(newly_cells)
