@@ -105,3 +105,11 @@ func play_win() -> void:
 
 func play_lose() -> void:
 	_play(_make_arpeggio([392.0, 329.63, 261.63], 0.18), "sfx_volume")
+
+
+func play_power() -> void:
+	_play(_make_arpeggio([392.0, 523.25, 659.25, 987.77], 0.09), "sfx_volume")
+
+
+func play_alert() -> void:
+	_play(_make_arpeggio([466.16, 392.0, 466.16, 392.0], 0.1), "sfx_volume")

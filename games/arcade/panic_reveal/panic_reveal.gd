@@ -40,9 +40,13 @@ const SPARX_SPEED := 6.0  # celdas de borde por segundo
 # original NO da el nivel por completado -- hay que seguir revelando fondo
 # hasta recuperarla.
 const PANIC_START := 0.7
-const PANIC_DRIFT_PER_SEC := 0.012
-const PANIC_SUBJECT_PENALTY := 0.02   # por celda de silueta revelada
-const PANIC_BACKGROUND_BONUS := 0.012  # por celda de fondo revelado
+# El drift original de 0.012/seg bajaba la barra de PANIC_START al umbral
+# en ~32s aunque el jugador no tocara la silueta ni una vez -- demasiado
+# castigo para un nivel de 42-75s. A 0.006/seg tarda ~63s en cruzar sola,
+# presión real hacia el final del nivel sin sentirse injusta desde el inicio.
+const PANIC_DRIFT_PER_SEC := 0.006
+const PANIC_SUBJECT_PENALTY := 0.016  # por celda de silueta revelada
+const PANIC_BACKGROUND_BONUS := 0.015  # por celda de fondo revelado
 const PANIC_MONSTER_THRESHOLD := 0.32
 const DIAGONAL_FACTOR := 1.41421356  # sqrt(2): un paso diagonal recorre más distancia real,
 	# así que tarda lo mismo por segundo (no "más rápido") que uno recto, igual que en el
@@ -618,7 +622,7 @@ func _trigger_asteroid_storm() -> void:
 		e["view"].queue_free()
 		score += 40
 	_update_hud()
-	AudioManager.play_win()
+	AudioManager.play_power()
 
 
 func _update_panic_gauge(cells: Array) -> void:
@@ -644,6 +648,10 @@ func _update_panic_visual() -> void:
 		panic_in_monster = now_in_monster
 		panic_bar.add_theme_stylebox_override("fill", UIKit.stylebox(UIKit.COLOR_DANGER if panic_in_monster else UIKit.COLOR_ACCENT_2, Color(0, 0, 0, 0), 6))
 		panic_icon_label.text = "👹" if panic_in_monster else "😊"
+		if panic_in_monster:
+			AudioManager.play_alert()
+		else:
+			AudioManager.play_click()
 
 
 func _update_direction_from_pointer() -> void:
@@ -842,6 +850,7 @@ func _kill_enemies_in_cells(cells: Array) -> void:
 	var captured_now: Dictionary = {}
 	for c: Vector2i in cells:
 		captured_now[c] = true
+	var killed_any := false
 	for e: Dictionary in enemies.duplicate():
 		if e["kind"] != "qix" or e.get("is_lead", false):
 			continue
@@ -849,6 +858,9 @@ func _kill_enemies_in_cells(cells: Array) -> void:
 			enemies.erase(e)
 			e["view"].queue_free()
 			score += 30
+			killed_any = true
+	if killed_any:
+		AudioManager.play_click()
 	_update_hud()
 
 
