@@ -1,15 +1,11 @@
 extends Control
 ## Estilo Qix / Gals Panic: trazas líneas desde el borde seguro hacia
 ## el área sin revelar para encerrar territorio; al volver al borde,
-## esa zona se captura (a menos que un enemigo esté adentro) y revela
-## el paisaje procedural de abajo. Si un enemigo toca tu traza antes
-## de cerrarla, pierdes una vida.
+## esa zona (el lado más chico) se captura y revela la foto de abajo. Si
+## una araña toca tu traza antes de cerrarla, pierdes una vida.
 ##
-## El "arte a revelar" son paisajes naturales procedurales (uno por nivel:
-## lago alpino, playa, bosque, aurora, desierto, valle) en vez de fotos.
-## Se dibujan con un shader (landscape.gdshader) horneado a 2x la
-## resolución del tablero, no celda por celda — por eso se ven nítidos y
-## sin cuadrícula. Lo "sin revelar" es otra capa (cover_mask.gdshader)
+## El "arte a revelar" es una foto de naturaleza por nivel (LANDSCAPES),
+## estilo fondos de pantalla de Windows. Lo "sin revelar" es otra capa (cover_mask.gdshader)
 ## que lee una máscara de 1 texel por celda lógica del tablero, pero
 ## muestreada con filtro bilineal para que el borde de revelado salga
 ## suave en vez de un escalón duro por celda; la lógica de juego
@@ -28,7 +24,21 @@ const CELL := 34.0
 ## radio y el marcador se queda quieto en vez de rebotar.
 const DRAG_DEADZONE := CELL * 0.75
 const NO_CELL := Vector2i(-1, -1)
-const LANDSCAPE_BAKE_SCALE := 2.0
+## Una foto de naturaleza por nivel (estilo fondos de Windows). Son fotos
+## CC0 de Unsplash vía Wikimedia Commons, recortadas a 1080x1458 (la
+## proporción del tablero); fuentes en landscapes/CREDITOS.md.
+const LANDSCAPES := [
+	"res://games/arcade/panic_reveal/landscapes/01_lago_montana.jpg",
+	"res://games/arcade/panic_reveal/landscapes/02_playa_turquesa.jpg",
+	"res://games/arcade/panic_reveal/landscapes/03_cascada.jpg",
+	"res://games/arcade/panic_reveal/landscapes/04_bryce_canyon.jpg",
+	"res://games/arcade/panic_reveal/landscapes/05_bosque_otono.jpg",
+	"res://games/arcade/panic_reveal/landscapes/06_playa_nagtabon.jpg",
+	"res://games/arcade/panic_reveal/landscapes/07_lago_nubes.jpg",
+	"res://games/arcade/panic_reveal/landscapes/08_antelope_canyon.jpg",
+	"res://games/arcade/panic_reveal/landscapes/09_aurora_lofoten.jpg",
+	"res://games/arcade/panic_reveal/landscapes/10_aurora_colores.jpg",
+]
 ## Probabilidad por paso de que una araña cambie de rumbo sin haber chocado
 ## (para que no vayan en línea recta de pared a pared), y de que el jefe
 ## gire hacia tu marcador mientras estás trazando.
@@ -38,6 +48,7 @@ const SPIDER_COLOR := Color(0.95, 0.42, 0.18)
 const SPIDER_COLOR2 := Color(1.0, 0.92, 0.35)
 const KILL_SCORE := 30
 const BOSS_KILL_SCORE := 500
+const CLEAR_BONUS_SCORE := 1000  # por eliminar a todas las arañas del nivel
 const MOVE_INTERVAL := 0.09
 const CAPTURE_TARGET := 80.0  # el arcade original pide 80%, no 75%
 const MAX_LEVEL := 10
@@ -85,20 +96,18 @@ const HELP_TEXT := "Toca y arrastra en cualquier parte del tablero: el marcador 
 - El área encerrada se revela como si se corriera una cortina. Entre más grande el área capturada de una vez, más puntos.
 - Arriba hay una barra chica/monstruo: revelar la silueta la empuja hacia monstruo, revelar el fondo (todo lo que no es la silueta) la regresa, y se va sola hacia monstruo con el tiempo. Si llegas al 80% con la barra del lado monstruo, el nivel NO se completa todavía — sigue revelando fondo hasta recuperarla.
 - Cada nivel esconde una ☄️ tormenta de asteroides bajo alguna celda de fondo. Al revelarla, destruye a todas las arañas chicas en pantalla (la jefa es inmune).
-- Cada nivel es un paisaje natural distinto: lago alpino, playa tropical, bosque con niebla, aurora boreal, cañón desértico y valle con arcoíris.
+- Si eliminas a TODAS las arañas (incluida la jefa), el paisaje completo se revela solo y pasas de nivel, sin importar el % ni la barra chica/monstruo. +1000 puntos.
+- Cada nivel es una foto de naturaleza distinta: lagos de montaña, playas turquesa, cascada, cañones y auroras boreales.
 - Hay un límite de tiempo por nivel (arriba a la derecha). Si se agota, pierdes una vida y se reinicia el reloj.
 
 Captura el 80% del área (con la barra del lado chica) para pasar de nivel. Hay 10 niveles, cada uno con más enemigos, más rápidos y menos tiempo. Pierdes si se acaban tus 3 vidas."
 
 var grid_state: Array = []
-## El paisaje ya no se pinta celda por celda: landscape_painter lo hornea con
-## un shader en landscape_viewport una vez por nivel, landscape_bg muestra
-## esa textura (con el tinte de "modo monstruo" encima), y
+## landscape_bg muestra la foto del nivel (con el tinte de "modo monstruo"
+## y un poco más de saturación, ver panic_tint.gdshader), y
 ## cover_layer pinta el "opaco" encima usando mask_image/mask_texture (un
 ## texel por celda lógica, muestreado con filtro bilineal + smoothstep en
 ## el shader para que el borde de revelado se vea suave, no en escalones).
-var landscape_viewport: SubViewport
-var landscape_painter: ColorRect
 var landscape_bg: TextureRect
 var cover_layer: ColorRect
 var mask_image: Image
@@ -291,26 +300,12 @@ func _build_ui() -> void:
 
 	var board_size := Vector2(GRID_W * CELL, GRID_H * CELL)
 
-	# El paisaje (landscape.gdshader) es caro -- fbm y varias capas -- así que
-	# se hornea UNA vez por nivel en un SubViewport a 2x (nítido en pantallas
-	# densas) y el tablero solo muestra esa textura; ver _setup_level().
-	landscape_viewport = SubViewport.new()
-	landscape_viewport.size = Vector2i(board_size * LANDSCAPE_BAKE_SCALE)
-	landscape_viewport.disable_3d = true
-	landscape_viewport.render_target_update_mode = SubViewport.UPDATE_DISABLED
-	play_area.add_child(landscape_viewport)
-	landscape_painter = ColorRect.new()
-	landscape_painter.size = board_size * LANDSCAPE_BAKE_SCALE
-	landscape_painter.material = ShaderMaterial.new()
-	landscape_painter.material.shader = load("res://games/arcade/panic_reveal/landscape.gdshader")
-	landscape_painter.material.set_shader_parameter("aspect", float(GRID_W) / float(GRID_H))
-	landscape_viewport.add_child(landscape_painter)
-
+	# Foto del nivel (ver LANDSCAPES), ya recortada a la proporción del
+	# tablero; STRETCH_KEEP_ASPECT_COVERED por si acaso nunca se deforma.
 	landscape_bg = TextureRect.new()
 	landscape_bg.size = board_size
 	landscape_bg.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	landscape_bg.stretch_mode = TextureRect.STRETCH_SCALE
-	landscape_bg.texture = landscape_viewport.get_texture()
+	landscape_bg.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
 	landscape_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	landscape_bg.material = ShaderMaterial.new()
 	landscape_bg.material.shader = load("res://games/arcade/panic_reveal/panic_tint.gdshader")
@@ -459,8 +454,7 @@ func _setup_level() -> void:
 			var is_border: bool = x == 0 or y == 0 or x == GRID_W - 1 or y == GRID_H - 1
 			row.append("captured" if is_border else "open")
 		grid_state.append(row)
-	landscape_painter.material.set_shader_parameter("level", float(level))
-	landscape_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
+	landscape_bg.texture = load(LANDSCAPES[(level - 1) % LANDSCAPES.size()])
 	_rebuild_mask()
 	_build_subject_mask()
 	panic_gauge = PANIC_START
@@ -623,7 +617,7 @@ func _capture_percent() -> float:
 func _build_subject_mask() -> void:
 	## Silueta central (cabeza + cuerpo) que hace de "sujeto" para la barra
 	## chica/monstruo -- el original usa la foto de la chica, acá usamos una
-	## forma simple ya que el arte es paisaje procedural. Misma forma cada
+	## forma simple ya que el arte es un paisaje sin persona. Misma forma cada
 	## nivel, centrada, para que el jugador aprenda a ubicarla.
 	subject_mask.clear()
 	var cx: float = GRID_W / 2.0
@@ -865,10 +859,25 @@ func _complete_capture() -> void:
 	_update_hud()
 	_kill_enemies_in_cells(newly_cells)
 
-	if _capture_percent() < CAPTURE_TARGET:
+	# Si ya no queda ninguna araña (ni la jefa), el paisaje se destapa
+	# completo en automático y el nivel se da por ganado, sin importar el %
+	# ni la barra chica/monstruo -- es la recompensa por limpiar el tablero.
+	# Los Sparx (centinelas del borde) no cuentan como arañas.
+	var cleared: bool = _spiders_left() == 0
+	if cleared:
+		var rest: Array = []
+		for y in range(GRID_H):
+			for x in range(GRID_W):
+				if grid_state[y][x] == "open":
+					grid_state[y][x] = "captured"
+					rest.append(Vector2i(x, y))
+		_reveal_new_cells(rest)
+		score += CLEAR_BONUS_SCORE + rest.size() * 2
+		_update_hud()
+		AudioManager.play_power()
+	elif _capture_percent() < CAPTURE_TARGET:
 		return
-
-	if panic_gauge < PANIC_MONSTER_THRESHOLD:
+	elif panic_gauge < PANIC_MONSTER_THRESHOLD:
 		# Como en el arcade original: llegar a la meta con la barra del lado
 		# "monstruo" no completa el nivel -- hay que seguir revelando fondo
 		# (no la silueta) hasta recuperarla y volver a cerrar un trazo.
@@ -884,11 +893,15 @@ func _complete_capture() -> void:
 	# máscara del nivel nuevo.
 	state = "level_complete"
 	status_label.remove_theme_color_override("font_color")
-	status_label.text = "¡Nivel %d completo!" % level
+	if cleared:
+		status_label.text = "¡Sin arañas! Paisaje revelado +%d" % CLEAR_BONUS_SCORE
+	else:
+		status_label.text = "¡Nivel %d completo!" % level
 	var session: int = game_session
 	if reveal_tween and reveal_tween.is_valid():
 		await reveal_tween.finished
-	await get_tree().create_timer(0.85).timeout
+	# Con el tablero limpio se deja ver el paisaje completo un rato más.
+	await get_tree().create_timer(2.2 if cleared else 0.85).timeout
 	if session != game_session:
 		return
 	_advance_level()
@@ -919,6 +932,14 @@ func _open_regions() -> Array:
 					stack.append(n)
 			regions.append(region)
 	return regions
+
+
+func _spiders_left() -> int:
+	var n := 0
+	for e: Dictionary in enemies:
+		if e["kind"] == "qix":
+			n += 1
+	return n
 
 
 func _region_of_boss(regions: Array) -> int:
