@@ -40,9 +40,29 @@ const ROW_VISUALS := [
 const ROW_POINTS_FORMATION := [150, 80, 80, 50, 50, 50]
 const ROW_POINTS_DIVING := [400, 160, 160, 100, 100, 100]
 
-const ENTRY_DURATION := 1.05
-const ENTRY_STAGGER := 0.07
+## Entrada estilo Galaga real: la formación llega en 5 oleadas. Cada oleada
+## es un "convoy" que sigue la misma curva con rizo (una detrás de otra,
+## separadas CONVOY_GAP s) y al final cada nave se separa hacia su lugar.
+const ENTRY_PATH_DURATION := 2.1
+const ENTRY_TO_SLOT := 0.55
+const CONVOY_GAP := 0.13
+const WAVE_GAP := 1.35
+const ENTRY_WAVES := 5
+## Mientras la formación se arma, se desplaza de lado a lado toda junta;
+## ya completa, "respira" (se abre y cierra desde el centro), como el arcade.
+const BREATHE_SPEED := 1.7
+const BREATHE_AMOUNT := 0.09
 const DIVE_DURATION := 1.55
+const REJOIN_DURATION := 1.1
+## Etapa de desafío (bonus): después de los niveles 2 y 6. 5 oleadas de 8
+## naves cruzan la pantalla en rizos SIN disparar; 100 pts por impacto y
+## 10 000 si las derribas todas ("PERFECT!"), como en el original.
+const CHALLENGE_AFTER_LEVELS := [2, 6]
+const CHALLENGE_WAVES := 5
+const CHALLENGE_PER_WAVE := 8
+const CHALLENGE_PATH_DURATION := 4.6
+const CHALLENGE_HIT_POINTS := 100
+const CHALLENGE_PERFECT_BONUS := 10000
 const CAPTURE_CHANCE := 0.3
 const CAPTURE_MIN_LEVEL := 2
 const CAPTURE_RETURN_DURATION := 0.8
@@ -50,9 +70,13 @@ const CAPTURED_TINT := Color(0.55, 0.58, 0.66)
 
 const HELP_TEXT := "Muévete con ◀ ▶ y dispara con 🔫 hacia arriba.
 
-Al iniciar cada nivel, la formación entra volando en curva desde los bordes — espera a que se acomode. Luego se mece de un lado a otro y de vez en cuando una nave pica hacia ti en una curva envolvente, disparando — esquívala o destrúyela (vale más puntos que una que sigue en formación).
+Al iniciar cada nivel, la formación entra en 5 oleadas: convoyes que hacen un rizo y luego suben a su lugar — ya puedes dispararles mientras entran. Mientras se arma, la formación se desliza de lado a lado y, ya completa, se abre y se cierra y de vez en cuando una nave pica hacia ti en una curva envolvente, disparando — esquívala o destrúyela (vale más puntos que una que sigue en formación).
 
 Cuidado con los jefes (arriba, con escudo giratorio): a veces, en vez de disparar, capturan tu nave con un rayo tractor y se la llevan a la formación. Sigues jugando con una nave nueva, pero para rescatar la capturada debes destruir justo a ese jefe — al lograrlo, vuelas con dos naves a la vez (doble disparo) el resto del nivel.
+
+Las naves que bajan en picada y no destruyes reaparecen arriba y vuelven a su lugar.
+
+Después de los niveles 2 y 6 viene una ETAPA DE DESAFÍO: 40 naves cruzan la pantalla en rizos sin disparar. 100 puntos por cada una que derribes y 10 000 de bonus si las derribas todas.
 
 Destruye toda la formación (incluyendo las que se lanzan en picada) para pasar de nivel. Hay 10 niveles, cada uno con más filas y picadas más frecuentes. Pierdes si se acaban tus 3 vidas."
 
@@ -68,6 +92,14 @@ var enemy_bullets: Array = []
 var dive_timer: float = 0.0
 var dive_interval: float = 1.6
 var stars: Array = []
+
+var formation_complete: bool = false
+var breathe_start: float = 0.0
+var in_challenge: bool = false
+var challenge_hits: int = 0
+var challenge_total: int = 0
+var challenge_timer: float = 0.0
+var challenges_done: Array = []
 
 var player_captured: bool = false
 var captured_fighter: Dictionary = {}
@@ -221,6 +253,7 @@ func _new_game() -> void:
 	lives = 3
 	level = 1
 	state = "playing"
+	challenges_done.clear()
 	_setup_level()
 
 
@@ -243,41 +276,115 @@ func _setup_level() -> void:
 		b["view"].queue_free()
 	enemy_bullets.clear()
 
+	in_challenge = false
+	challenge_hits = 0
+	formation_complete = false
 	var rows: int = min(2 + level / 2, 6)
 	var total_width: float = (FORMATION_COLS - 1) * COL_SPACING
 	var start_x: float = (PLAY_W - total_width) / 2.0 - ENEMY_SIZE.x / 2.0
 
-	var idx: int = 0
+	var slots: Array = []
 	for r in range(rows):
-		var visual: Dictionary = ROW_VISUALS[r % ROW_VISUALS.size()]
 		for c in range(FORMATION_COLS):
-			var bx: float = start_x + c * COL_SPACING
-			var by: float = FORMATION_TOP + r * ROW_SPACING
-			var view := EntitySprite.new()
-			view.size = ENEMY_SIZE
-			view.mouse_filter = Control.MOUSE_FILTER_IGNORE
-			view.setup(visual["shape"], visual["color"], visual["color2"], r * FORMATION_COLS + c)
-			play_area.add_child(view)
+			slots.append(Vector2i(c, r))
+	# Reparto en oleadas: se llena de arriba hacia abajo, y dentro de cada
+	# oleada del centro hacia afuera -- las primeras naves en llegar ocupan
+	# el centro de las filas de arriba, como en el arcade.
+	var per_wave: int = ceili(float(slots.size()) / ENTRY_WAVES)
+	var mid: float = (FORMATION_COLS - 1) / 2.0
+	slots.sort_custom(func(a: Vector2i, b: Vector2i) -> bool:
+		if a.y != b.y:
+			return a.y < b.y
+		return absf(a.x - mid) < absf(b.x - mid))
 
-			# Entrada en curva: llegan desde una esquina fuera de pantalla,
-			# escalonadas por columna, en vez de aparecer ya formadas.
-			var from_side: float = -60.0 if c < FORMATION_COLS / 2.0 else PLAY_W + 60.0
-			var entry_from := Vector2(from_side, -70.0 - r * 14.0)
-			var entry_ctrl := Vector2(lerp(from_side, bx, 0.35), by - 220.0 - r * 10.0)
-			view.position = entry_from
-
-			enemies.append({
-				"row": r, "base_x": bx, "base_y": by, "pos": entry_from, "state": "entering",
-				"phase": randf() * TAU, "wing_seed": randf(), "has_shot": false, "view": view,
-				"entry_from": entry_from, "entry_ctrl": entry_ctrl,
-				"entry_t": -float(idx) * ENTRY_STAGGER, "is_boss": r == 0, "carries_capture": false,
-			})
-			idx += 1
+	for i in range(slots.size()):
+		var slot: Vector2i = slots[i]
+		var r: int = slot.y
+		var c: int = slot.x
+		var wave: int = i / per_wave
+		var in_wave: int = i % per_wave
+		var visual: Dictionary = ROW_VISUALS[r % ROW_VISUALS.size()]
+		var view := EntitySprite.new()
+		view.size = ENEMY_SIZE
+		view.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		view.setup(visual["shape"], visual["color"], visual["color2"], r * FORMATION_COLS + c)
+		play_area.add_child(view)
+		var path: Array = _entry_path(wave)
+		view.position = path[0]
+		enemies.append({
+			"row": r, "base_x": start_x + c * COL_SPACING, "base_y": FORMATION_TOP + r * ROW_SPACING,
+			"pos": path[0], "state": "entering", "path": path,
+			"entry_t": -(wave * WAVE_GAP + in_wave * CONVOY_GAP),
+			"phase": randf() * TAU, "wing_seed": randf(), "has_shot": false, "view": view,
+			"is_boss": r == 0, "carries_capture": false,
+		})
 
 	dive_interval = max(0.5, 1.7 - level * 0.1)
-	dive_timer = dive_interval + rows * FORMATION_COLS * ENTRY_STAGGER + ENTRY_DURATION
+	var last_arrival: float = (ENTRY_WAVES - 1) * WAVE_GAP + per_wave * CONVOY_GAP + ENTRY_PATH_DURATION + ENTRY_TO_SLOT
+	dive_timer = dive_interval + last_arrival
 	status_label.text = "Nivel %d / %d" % [level, MAX_LEVEL]
+	status_label.remove_theme_color_override("font_color")
 	_update_hud()
+
+
+## Curva de entrada de cada oleada (puntos para Catmull-Rom): alternan
+## desde arriba-izquierda, arriba-derecha y los costados, todas con un rizo
+## completo antes de subir a la formación.
+func _entry_path(wave: int) -> Array:
+	var mirror: bool = wave % 2 == 1
+	var pts: Array
+	match wave % 3:
+		0:
+			pts = [Vector2(250, -60), Vector2(270, 120), Vector2(230, 330)]
+			pts.append_array(_loop_points(Vector2(170, 400), 75.0, -PI / 2.0 + 0.9, true))
+			pts.append(Vector2(260, 300))
+		1:
+			pts = [Vector2(-50, 640), Vector2(120, 600), Vector2(280, 520)]
+			pts.append_array(_loop_points(Vector2(330, 430), 80.0, PI / 2.0, false))
+			pts.append(Vector2(300, 300))
+		_:
+			pts = [Vector2(PLAY_W / 2.0 - 10.0, -60), Vector2(PLAY_W / 2.0 - 40.0, 200)]
+			pts.append_array(_loop_points(Vector2(PLAY_W / 2.0 - 110.0, 360), 90.0, 0.0, true))
+			pts.append(Vector2(PLAY_W / 2.0 - 60.0, 260))
+	if mirror:
+		for i in range(pts.size()):
+			pts[i] = Vector2(PLAY_W - pts[i].x, pts[i].y)
+	return pts
+
+
+func _loop_points(center: Vector2, radius: float, start_angle: float, clockwise: bool) -> Array:
+	var out: Array = []
+	for k in range(9):
+		var a: float = start_angle + (TAU * k / 8.0) * (1.0 if clockwise else -1.0)
+		out.append(center + Vector2(cos(a), sin(a)) * radius)
+	return out
+
+
+## Punto a lo largo de una curva Catmull-Rom que pasa por todos los puntos
+## (t de 0 a 1 recorre la curva completa).
+func _spline(pts: Array, t: float) -> Vector2:
+	var n: int = pts.size() - 1
+	var f: float = clampf(t, 0.0, 1.0) * n
+	var i: int = mini(int(f), n - 1)
+	var u: float = f - i
+	var p0: Vector2 = pts[maxi(i - 1, 0)]
+	var p1: Vector2 = pts[i]
+	var p2: Vector2 = pts[i + 1]
+	var p3: Vector2 = pts[mini(i + 2, n)]
+	return 0.5 * ((2.0 * p1) + (-p0 + p2) * u + (2.0 * p0 - 5.0 * p1 + 4.0 * p2 - p3) * u * u + (-p0 + 3.0 * p1 - 3.0 * p2 + p3) * u * u * u)
+
+
+## Posición del lugar de la nave en la formación en este instante: toda la
+## formación se desliza de lado a lado mientras llegan naves, y ya completa
+## "respira" abriéndose y cerrándose desde el centro.
+func _formation_pos(e: Dictionary) -> Vector2:
+	var bx: float = e["base_x"]
+	var by: float = e["base_y"]
+	if formation_complete:
+		var k: float = 1.0 + BREATHE_AMOUNT * (0.5 + 0.5 * sin((time_acc - breathe_start) * BREATHE_SPEED - PI / 2.0))
+		var cx: float = PLAY_W / 2.0 - ENEMY_SIZE.x / 2.0
+		return Vector2(cx + (bx - cx) * k, FORMATION_TOP + (by - FORMATION_TOP) * k)
+	return Vector2(bx + sin(time_acc * SWAY_SPEED) * SWAY_AMPLITUDE, by)
 
 
 func _update_hud() -> void:
@@ -319,10 +426,18 @@ func _process(delta: float) -> void:
 	_update_player(delta)
 	player_view.set_phase(fmod(time_acc * 3.0, 1.0))
 
+	if in_challenge:
+		_process_challenge(delta)
+		return
+
 	dive_timer -= delta
 	if dive_timer <= 0.0:
 		dive_timer = dive_interval
 		_start_random_dive()
+
+	if not formation_complete and _all_arrived():
+		formation_complete = true
+		breathe_start = time_acc
 
 	for e: Dictionary in enemies:
 		if e["state"] == "removed":
@@ -333,15 +448,36 @@ func _process(delta: float) -> void:
 			"entering":
 				e["entry_t"] += delta
 				if e["entry_t"] < 0.0:
+					e["view"].visible = false
 					continue
-				var t: float = clamp(e["entry_t"] / ENTRY_DURATION, 0.0, 1.0)
-				e["pos"] = _bezier2(e["entry_from"], e["entry_ctrl"], Vector2(e["base_x"], e["base_y"]), t)
+				e["view"].visible = true
+				var prev: Vector2 = e["pos"]
+				if e["entry_t"] < ENTRY_PATH_DURATION:
+					e["pos"] = _spline(e["path"], e["entry_t"] / ENTRY_PATH_DURATION)
+				else:
+					# Sale del convoy y sube a su lugar (que se sigue moviendo).
+					var t: float = clampf((e["entry_t"] - ENTRY_PATH_DURATION) / ENTRY_TO_SLOT, 0.0, 1.0)
+					var from: Vector2 = e["path"][e["path"].size() - 1]
+					var to: Vector2 = _formation_pos(e)
+					e["pos"] = _bezier2(from, Vector2(lerpf(from.x, to.x, 0.5), to.y + 60.0), to, t)
+					if t >= 1.0:
+						e["state"] = "formation"
+				_face_motion(e, prev)
 				e["view"].position = e["pos"]
-				if t >= 1.0:
+			"rejoin":
+				# Picada que salió por abajo: reaparece arriba y vuelve a su
+				# lugar en la formación (en el original no se "pierde").
+				e["entry_t"] += delta
+				var t4: float = clampf(e["entry_t"] / REJOIN_DURATION, 0.0, 1.0)
+				var prev2: Vector2 = e["pos"]
+				e["pos"] = _bezier2(e["entry_from"], e["entry_ctrl"], _formation_pos(e), t4)
+				_face_motion(e, prev2)
+				e["view"].position = e["pos"]
+				if t4 >= 1.0:
 					e["state"] = "formation"
 			"formation":
-				e["pos"].x = e["base_x"] + sin(time_acc * SWAY_SPEED + e["phase"]) * SWAY_AMPLITUDE
-				e["pos"].y = e["base_y"]
+				e["pos"] = _formation_pos(e)
+				e["view"].set_facing(0.0)
 				e["view"].position = e["pos"]
 				if e["carries_capture"]:
 					_update_captive_visual(e)
@@ -361,11 +497,11 @@ func _process(delta: float) -> void:
 					if e["has_captured"]:
 						_start_capture_return(e)
 					else:
-						_remove_enemy(e, false)
+						_start_rejoin(e)
 			"returning":
 				e["entry_t"] += delta
 				var t3: float = clamp(e["entry_t"] / CAPTURE_RETURN_DURATION, 0.0, 1.0)
-				e["pos"] = _bezier2(e["entry_from"], e["entry_ctrl"], Vector2(e["base_x"], e["base_y"]), t3)
+				e["pos"] = _bezier2(e["entry_from"], e["entry_ctrl"], _formation_pos(e), t3)
 				e["view"].position = e["pos"]
 				_update_captive_visual(e)
 				if t3 >= 1.0:
@@ -379,7 +515,139 @@ func _process(delta: float) -> void:
 	_update_dual_fighter()
 
 	if state == "playing" and _all_enemies_cleared():
-		_advance_level()
+		if level in CHALLENGE_AFTER_LEVELS and not challenges_done.has(level):
+			challenges_done.append(level)
+			_start_challenge()
+		else:
+			_advance_level()
+
+
+func _all_arrived() -> bool:
+	for e: Dictionary in enemies:
+		if e["state"] == "entering":
+			return false
+	return true
+
+
+## Orienta la nave hacia donde se mueve (en entradas y regresos), como las
+## naves del arcade que "miran" su trayectoria al hacer los rizos.
+func _face_motion(e: Dictionary, prev: Vector2) -> void:
+	var d: Vector2 = e["pos"] - prev
+	if d.length() > 0.5:
+		e["view"].set_facing(rad_to_deg(atan2(d.x, -d.y)))
+
+
+func _start_rejoin(e: Dictionary) -> void:
+	e["state"] = "rejoin"
+	e["entry_t"] = 0.0
+	var from := Vector2(e["base_x"], -40.0)
+	e["entry_from"] = from
+	e["entry_ctrl"] = Vector2(from.x, e["base_y"] * 0.5)
+	e["pos"] = from
+
+
+# --- Etapa de desafío -----------------------------------------------------
+func _start_challenge() -> void:
+	in_challenge = true
+	challenge_hits = 0
+	challenge_total = CHALLENGE_WAVES * CHALLENGE_PER_WAVE
+	challenge_timer = 0.0
+	for b: Dictionary in enemy_bullets:
+		b["view"].queue_free()
+	enemy_bullets.clear()
+	for e: Dictionary in enemies:
+		e["view"].queue_free()
+	enemies.clear()
+	for w in range(CHALLENGE_WAVES):
+		var path: Array = _challenge_path(w)
+		var visual: Dictionary = ROW_VISUALS[(w + 1) % ROW_VISUALS.size()]
+		for k in range(CHALLENGE_PER_WAVE):
+			var view := EntitySprite.new()
+			view.size = ENEMY_SIZE
+			view.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			view.setup(visual["shape"], visual["color"], visual["color2"], w * 10 + k)
+			view.visible = false
+			play_area.add_child(view)
+			enemies.append({
+				"row": 5, "state": "flyby", "path": path, "pos": path[0], "view": view,
+				"entry_t": -(0.6 + w * 3.4 + k * 0.17), "wing_seed": randf(), "is_boss": false,
+				"carries_capture": false,
+			})
+	status_label.text = "¡ETAPA DE DESAFÍO!"
+	status_label.add_theme_color_override("font_color", UIKit.COLOR_ACCENT_3)
+	AudioManager.play_power()
+
+
+## Rutas de la etapa de desafío: cruzan la pantalla con rizos y se van por
+## el otro lado (no se quedan en formación ni disparan).
+func _challenge_path(w: int) -> Array:
+	var pts: Array
+	match w:
+		0:
+			pts = [Vector2(PLAY_W / 2.0 - 40.0, -60), Vector2(PLAY_W / 2.0 - 60.0, 180)]
+			pts.append_array(_loop_points(Vector2(PLAY_W / 2.0 - 150.0, 340), 100.0, 0.0, true))
+			pts.append_array([Vector2(PLAY_W / 2.0 + 60.0, 300), Vector2(PLAY_W + 80.0, 120)])
+		1:
+			pts = [Vector2(-60, 520), Vector2(160, 470)]
+			pts.append_array(_loop_points(Vector2(300, 380), 90.0, PI / 2.0, false))
+			pts.append_array([Vector2(480, 330), Vector2(PLAY_W + 80.0, 260)])
+		2:
+			pts = [Vector2(PLAY_W + 60.0, 520), Vector2(PLAY_W - 160.0, 470)]
+			pts.append_array(_loop_points(Vector2(PLAY_W - 300.0, 380), 90.0, PI / 2.0, true))
+			pts.append_array([Vector2(PLAY_W - 480.0, 330), Vector2(-80, 260)])
+		3:
+			pts = [Vector2(120, -60), Vector2(200, 250), Vector2(PLAY_W / 2.0, 470), Vector2(PLAY_W - 200.0, 250), Vector2(PLAY_W - 120.0, -80)]
+		_:
+			pts = [Vector2(PLAY_W - 120.0, -60)]
+			pts.append_array(_loop_points(Vector2(PLAY_W / 2.0, 330), 150.0, -PI / 2.0 + 0.6, false))
+			pts.append_array([Vector2(160, 260), Vector2(-80, 80)])
+	return pts
+
+
+func _process_challenge(delta: float) -> void:
+	challenge_timer += delta
+	var active := false
+	for e: Dictionary in enemies:
+		if e["state"] == "removed":
+			continue
+		active = true
+		e["entry_t"] += delta
+		if e["entry_t"] < 0.0:
+			continue
+		var t: float = e["entry_t"] / CHALLENGE_PATH_DURATION
+		if t >= 1.0:
+			# Se escapó: se va sin puntos.
+			e["state"] = "removed"
+			e["view"].visible = false
+			continue
+		var prev: Vector2 = e["pos"]
+		e["pos"] = _spline(e["path"], t)
+		e["view"].visible = true
+		_face_motion(e, prev)
+		e["view"].position = e["pos"]
+		e["view"].set_phase(fmod(time_acc * 1.4 + e["wing_seed"], 1.0))
+	_update_bullets(delta)
+	_check_dive_collisions()
+	_update_dual_fighter()
+	if state == "playing" and not active:
+		_finish_challenge()
+
+
+func _finish_challenge() -> void:
+	in_challenge = false
+	state = "challenge_result"
+	var perfect: bool = challenge_hits == challenge_total
+	if perfect:
+		score += CHALLENGE_PERFECT_BONUS
+		AudioManager.play_win()
+	_update_hud()
+	status_label.text = ("¡PERFECTO! +%d" % CHALLENGE_PERFECT_BONUS) if perfect \
+		else "Impactos: %d / %d" % [challenge_hits, challenge_total]
+	await get_tree().create_timer(2.2).timeout
+	if state != "challenge_result":
+		return  # el jugador reinició mientras tanto
+	state = "playing"
+	_advance_level()
 
 
 func _update_player(delta: float) -> void:
@@ -537,7 +805,7 @@ func _check_dive_collisions() -> void:
 		return
 	var player_rect := Rect2(player_x, PLAYER_Y, PLAYER_SIZE.x, PLAYER_SIZE.y)
 	for e: Dictionary in enemies:
-		if e["state"] == "diving" and not e.get("capture_dive", false) \
+		if (e["state"] == "diving" or e["state"] == "flyby") and not e.get("capture_dive", false) \
 				and Rect2(e["pos"], ENEMY_SIZE).intersects(player_rect):
 			_remove_enemy(e, false)
 			_lose_life()
@@ -545,7 +813,11 @@ func _check_dive_collisions() -> void:
 
 
 func _remove_enemy(e: Dictionary, by_bullet: bool) -> void:
-	if by_bullet:
+	if by_bullet and in_challenge:
+		score += CHALLENGE_HIT_POINTS
+		challenge_hits += 1
+		_update_hud()
+	elif by_bullet:
 		var row: int = e.get("row", ROW_VISUALS.size() - 1)
 		var was_diving: bool = e["state"] == "diving" or e["state"] == "returning"
 		score += ROW_POINTS_DIVING[row] if was_diving else ROW_POINTS_FORMATION[row]
