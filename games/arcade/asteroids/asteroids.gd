@@ -14,7 +14,8 @@ const THRUST := 260.0
 const FRICTION_PER_SEC := 0.55 # que tan rapido frena al soltar el empuje (0=nada, 1=frena de golpe)
 const BULLET_SPEED := 460.0
 const BULLET_LIFETIME := 1.0
-const FIRE_COOLDOWN := 0.28
+const FIRE_COOLDOWN := 0.2
+const MAX_BULLETS := 4
 const MAX_LEVEL := 10
 const BASE_ASTEROID_SPEED := 45.0
 const SPEED_PER_LEVEL := 6.0
@@ -42,7 +43,7 @@ const HELP_TEXT := "Controla tu nave con los botones de abajo:
 - ● dispara.
 - ✦ hiperespacio: teletransporte de emergencia a una posición al azar. Es arriesgado — hay una pequeña probabilidad de que la nave no resista el salto.
 
-Si sales por un borde de la pantalla, apareces por el lado opuesto. Destruye los asteroides grandes: se dividen en 2 más chicos (y esos en 2 más chicos todavía) hasta desaparecer — entre más chico, más puntos vale.
+Si sales por un borde de la pantalla, apareces por el lado opuesto — tus balas también. Como en el original, solo puedes tener 4 balas en pantalla a la vez, y el latido de fondo se acelera conforme quedan menos asteroides. Destruye los asteroides grandes: se dividen en 2 más chicos (y esos en 2 más chicos todavía) hasta desaparecer — entre más chico, más puntos vale.
 
 De vez en cuando aparece un platillo volador: el grande dispara al azar, el chico (desde nivel 4) te apunta directamente. Destrúyelos para puntos extra antes de que te disparen. Ganas una vida extra cada 10,000 puntos.
 
@@ -71,6 +72,10 @@ var lives: int = 3
 var level: int = 1
 var next_extra_life: int = EXTRA_LIFE_SCORE
 var state: String = "playing" # playing | game_over | won
+
+var beat_timer: float = 1.0
+var beat_high: bool = false
+var beat_start_count: int = 1
 
 var play_area: Control
 var ship_sprite: EntitySprite
@@ -240,6 +245,8 @@ func _spawn_level() -> void:
 		var edge_pos: Vector2 = _random_edge_position()
 		var dir: Vector2 = (Vector2(PLAY_W / 2.0, PLAY_H / 2.0) - edge_pos).normalized().rotated(randf_range(-0.6, 0.6))
 		_spawn_asteroid(edge_pos, dir * speed, 0)
+	beat_start_count = count
+	beat_timer = 1.0
 
 	level_label.text = "Nivel %d / %d" % [level, MAX_LEVEL]
 
@@ -266,7 +273,8 @@ func _spawn_asteroid(pos: Vector2, vel: Vector2, tier: int) -> void:
 
 
 func _on_fire_pressed() -> void:
-	if state != "playing" or fire_cooldown_left > 0.0:
+	# Como el original: máximo 4 balas tuyas en pantalla a la vez.
+	if state != "playing" or fire_cooldown_left > 0.0 or bullets.size() >= MAX_BULLETS:
 		return
 	fire_cooldown_left = FIRE_COOLDOWN
 	var dir := Vector2(sin(ship_rot), -cos(ship_rot))
@@ -409,11 +417,15 @@ func _process(delta: float) -> void:
 	ship_sprite.set_phase(ship_phase)
 	ship_sprite.visible = invulnerable_time <= 0.0 or int(invulnerable_time * 8.0) % 2 == 0
 
+	_update_heartbeat(delta)
+
+	# Las balas dan la vuelta a la pantalla igual que la nave (en el
+	# original no desaparecen en el borde; solo se acaba su alcance).
 	for i in range(bullets.size() - 1, -1, -1):
 		var b: Dictionary = bullets[i]
-		b["pos"] += b["vel"] * delta
+		b["pos"] = _wrap_pos(b["pos"] + b["vel"] * delta)
 		b["life"] -= delta
-		if b["life"] <= 0.0 or b["pos"].x < 0.0 or b["pos"].x > PLAY_W or b["pos"].y < 0.0 or b["pos"].y > PLAY_H:
+		if b["life"] <= 0.0:
 			b["view"].queue_free()
 			bullets.remove_at(i)
 			continue
@@ -427,9 +439,9 @@ func _process(delta: float) -> void:
 
 	for i in range(ufo_bullets.size() - 1, -1, -1):
 		var ub: Dictionary = ufo_bullets[i]
-		ub["pos"] += ub["vel"] * delta
+		ub["pos"] = _wrap_pos(ub["pos"] + ub["vel"] * delta)
 		ub["life"] -= delta
-		if ub["life"] <= 0.0 or ub["pos"].x < 0.0 or ub["pos"].x > PLAY_W or ub["pos"].y < 0.0 or ub["pos"].y > PLAY_H:
+		if ub["life"] <= 0.0:
 			ub["view"].queue_free()
 			ufo_bullets.remove_at(i)
 			continue
@@ -440,6 +452,23 @@ func _process(delta: float) -> void:
 
 	if asteroids.is_empty() and state == "playing":
 		_advance_level()
+
+
+## El "latido" del arcade: dos notas graves alternadas que se aceleran
+## conforme quedan menos asteroides (de ~1 s a 0.25 s entre golpes).
+func _update_heartbeat(delta: float) -> void:
+	beat_timer -= delta
+	if beat_timer > 0.0:
+		return
+	# "Masa" que queda: un grande equivale a 7 pedazos (1 + 2 medianos + 4
+	# chicos), así el ritmo sube de forma pareja al irlos rompiendo.
+	var mass := 0
+	for a: Dictionary in asteroids:
+		mass += [7, 3, 1][a["tier"]]
+	var remaining: float = clampf(float(mass) / float(maxi(beat_start_count, 1) * 7), 0.0, 1.0)
+	beat_timer = lerpf(0.25, 1.0, remaining)
+	beat_high = not beat_high
+	AudioManager.play_beat(beat_high)
 
 
 func _check_bullet_hits() -> void:

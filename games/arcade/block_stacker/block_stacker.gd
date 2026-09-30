@@ -38,7 +38,7 @@ const HELP_TEXT := "Las piezas caen solas; acomódalas para completar filas hori
 
 El contorno tenue debajo de la pieza muestra dónde caerá si usas ⏬. El panel \"Siguiente\" te enseña la próxima pieza con anticipación, y \"Guardada\" la que dejaste en reserva. Las piezas salen en \"bolsas\" de las 7 formas sin repetir, como en el Tetris moderno — nunca hay una sequía larga de una pieza.
 
-Cada línea completa desaparece y suma puntos (más líneas de una vez = más puntos). Cada 10 líneas subes de nivel y la caída se acelera, hasta el nivel 10. Ganas al llegar a 100 líneas; pierdes si las piezas llegan hasta arriba."
+Cada línea completa desaparece y suma puntos multiplicados por el nivel (1 línea 100, 2 = 300, 3 = 500, 4 = 800). Bajar la pieza con ⬇ da 1 punto por celda y dejarla caer con ⏬, 2 por celda. Cada 10 líneas subes de nivel y la caída se acelera, hasta el nivel 10. Ganas al llegar a 100 líneas; pierdes si las piezas llegan hasta arriba."
 
 var grid: Array = []
 var cell_views: Array = []
@@ -486,8 +486,10 @@ func _try_rotate() -> void:
 func _hard_drop() -> void:
 	if state != "playing":
 		return
+	# Como en el Tetris moderno: 2 puntos por celda de caída rápida.
 	while _try_move(0, 1):
-		pass
+		score += 2
+	_update_hud()
 	_lock_piece()
 
 
@@ -584,6 +586,9 @@ func _process(delta: float) -> void:
 	if fall_timer >= interval:
 		fall_timer = 0.0
 		if _try_move(0, 1):
+			if soft_dropping:
+				score += 1  # 1 punto por celda bajada a mano
+				_update_hud()
 			_redraw_grid()
 		else:
 			_lock_piece()

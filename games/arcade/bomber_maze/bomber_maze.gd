@@ -19,6 +19,18 @@ const MAX_LEVEL := 10
 const ENEMY_TICK := 0.08
 const DIRS := [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]
 const POWERUP_CHANCE := 0.35
+## Tipos de enemigo al estilo del NES: el globo es lento y deambula; la
+## cebolla es más rápida y a veces te persigue; el fantasma es rápido y te
+## caza (sale también al acabarse el tiempo o si bombardeas la salida).
+const ENEMY_TYPES := {
+	"globo": {"shape": "critter", "color": Color(1.0, 0.55, 0.3), "interval": 0.36, "chase": 0.0, "points": 100},
+	"cebolla": {"shape": "alien", "color": Color(0.35, 0.55, 1.0), "interval": 0.26, "chase": 0.35, "points": 200},
+	"fantasma": {"shape": "ghost", "color": Color(0.75, 0.45, 0.95), "interval": 0.18, "chase": 0.7, "points": 400},
+}
+const LEVEL_TIME := 180.0
+## Donde nacen los enemigos (casillas impares: nunca son pilares, y se
+## dejan libres de bloques al generar el mapa).
+const ENEMY_SPAWNS := [Vector2i(11, 11), Vector2i(1, 11), Vector2i(11, 1), Vector2i(7, 11), Vector2i(11, 7), Vector2i(7, 7)]
 const POWERUP_KINDS := ["bomb_up", "fire_up", "speed_up"]
 const POWERUP_ICON := {"bomb_up": "💣", "fire_up": "🔥", "speed_up": "👟"}
 const POWERUP_COLOR := {
@@ -32,6 +44,10 @@ La bomba explota en cruz tras un par de segundos, destruyendo bloques claros (bl
 Algunos bloques blandos esconden un power-up al destruirlos: 💣 más bombas a la vez, 🔥 más alcance de explosión, 👟 más velocidad. Se acumulan durante toda la partida.
 
 Uno de los bloques blandos esconde además la salida del nivel: después de eliminar a todos los enemigos, encuéntrala (destruyendo bloques) y camina sobre ella para pasar al siguiente nivel — si ya no quedan enemigos y no la has hallado, los bloques que podrían esconderla parpadean en dorado.
+
+Enemigos: 🟠 globo (lento, deambula, 100), 🔵 cebolla (más rápida, a veces te sigue, 200) y 🟣 fantasma (rápido, te caza, 400). Las bombas bloquean el paso a todos.
+
+Tienes 3 minutos por nivel: si se acaba el tiempo, salen fantasmas. ¡Y no bombardees la salida ya descubierta, que suelta más enemigos!
 
 Tocar a un enemigo también te quita una vida. Hay 10 niveles, cada uno con más enemigos. Pierdes si se acaban tus 3 vidas."
 
@@ -52,6 +68,8 @@ var bomb_capacity: int = 1
 var blast_radius: int = BASE_BLAST_RADIUS
 var move_interval: float = BASE_MOVE_INTERVAL
 
+var level_time_left: float = 180.0
+var time_up: bool = false
 var door_cell: Vector2i = Vector2i(-1, -1)
 var door_revealed: bool = false
 var door_hint_shown: bool = false
@@ -254,7 +272,7 @@ func _generate_grid() -> void:
 	var soft_cells: Array = []
 	for y in range(1, GRID_H - 1):
 		for x in range(1, GRID_W - 1):
-			if cell_type[y][x] != "empty" or _near_spawn(x, y):
+			if cell_type[y][x] != "empty" or _near_spawn(x, y) or ENEMY_SPAWNS.has(Vector2i(x, y)):
 				continue
 			if randf() < 0.55:
 				cell_type[y][x] = "soft"
@@ -294,19 +312,21 @@ func _setup_level() -> void:
 		e["view"].queue_free()
 	enemies.clear()
 
-	var spawn_corners: Array = [Vector2i(GRID_W - 2, GRID_H - 2), Vector2i(1, GRID_H - 2), Vector2i(GRID_W - 2, 1)]
-	var count: int = min(1 + level / 2, 3)
-	var interval: float = max(0.16, 0.34 - level * 0.016)
+	# Mezcla de tipos por nivel, como el NES: al principio casi puros globos
+	# lentos; después más cebollas y fantasmas que te persiguen.
+	var spawn_corners: Array = ENEMY_SPAWNS
+	var count: int = mini(2 + level / 2, 6)
 	for i in range(count):
-		var c: Vector2i = spawn_corners[i % spawn_corners.size()]
-		var view := EntitySprite.new()
-		view.size = Vector2(CELL * 0.82, CELL * 0.82)
-		view.position = _cell_pos(c, view.size)
-		view.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		view.setup("critter", UIKit.COLOR_DANGER, UIKit.COLOR_TEXT, i)
-		play_area.add_child(view)
-		enemies.append({"pos": c, "state": "alive", "timer": 0.0, "interval": interval, "view": view, "phase_offset": randf()})
+		var kind: String = "globo"
+		var r: float = randf()
+		if level >= 3 and r < 0.15 + level * 0.04:
+			kind = "fantasma"
+		elif level >= 2 and r < 0.45 + level * 0.03:
+			kind = "cebolla"
+		_spawn_enemy(spawn_corners[i % spawn_corners.size()], kind)
 
+	level_time_left = LEVEL_TIME
+	time_up = false
 	_redraw_grid()
 	status_label.text = ""
 	status_label.remove_theme_color_override("font_color")
@@ -356,7 +376,7 @@ func _update_hud() -> void:
 	for i in range(3):
 		hearts += "❤" if i < lives else "♡"
 	lives_label.text = hearts
-	level_label.text = "Nivel %d/%d" % [level, MAX_LEVEL]
+	level_label.text = "Nivel %d/%d  ⏱%d" % [level, MAX_LEVEL, ceili(level_time_left)]
 	powerup_label.text = "💣%d 🔥%d 👟%d" % [bomb_capacity, blast_radius, roundi((BASE_MOVE_INTERVAL - move_interval) / 0.02)]
 
 
@@ -411,6 +431,21 @@ func _process(delta: float) -> void:
 			if e["state"] == "alive":
 				_update_enemy(e, ENEMY_TICK)
 
+	# Reloj del nivel: al llegar a 0 salen fantasmas rápidos (en el NES,
+	# los "Pontan"), así que no conviene tardarse.
+	var before: int = ceili(level_time_left)
+	level_time_left = maxf(level_time_left - delta, 0.0)
+	if ceili(level_time_left) != before:
+		_update_hud()
+	if level_time_left <= 0.0 and not time_up:
+		time_up = true
+		for c: Vector2i in ENEMY_SPAWNS.slice(0, 4):
+			if _is_walkable(c):
+				_spawn_enemy(c, "fantasma")
+		status_label.text = "¡Se acabó el tiempo! Vienen los fantasmas"
+		status_label.add_theme_color_override("font_color", UIKit.COLOR_DANGER)
+		AudioManager.play_alert()
+
 	_update_bombs(delta)
 	_check_enemy_touch()
 
@@ -438,6 +473,9 @@ func _try_move_player() -> void:
 	var next: Vector2i = player_cell + current_dir
 	if not _is_walkable(next):
 		return
+	for b: Dictionary in bombs:
+		if b["cell"] == next:
+			return  # las bombas bloquean el paso (puedes salir de la tuya, no volver a entrar)
 	player_cell = next
 	player_view.position = _cell_pos(next, player_view.size)
 	_try_collect_powerup(next)
@@ -462,6 +500,31 @@ func _try_collect_powerup(cell: Vector2i) -> void:
 		return
 
 
+func _spawn_enemy(c: Vector2i, kind: String) -> void:
+	var info: Dictionary = ENEMY_TYPES[kind]
+	var view := EntitySprite.new()
+	view.size = Vector2(CELL * 0.82, CELL * 0.82)
+	view.position = _cell_pos(c, view.size)
+	view.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	view.setup(info["shape"], info["color"], UIKit.COLOR_TEXT, enemies.size())
+	play_area.add_child(view)
+	var interval: float = maxf(0.12, float(info["interval"]) - level * 0.01)
+	enemies.append({"pos": c, "state": "alive", "timer": 0.0, "interval": interval, "view": view,
+		"phase_offset": randf(), "kind": kind, "dir": DIRS[randi() % DIRS.size()]})
+
+
+## ¿Puede un enemigo entrar ahí? Las bombas bloquean el paso, como en el NES.
+func _enemy_can_enter(p: Vector2i) -> bool:
+	if not _is_walkable(p):
+		return false
+	for b: Dictionary in bombs:
+		if b["cell"] == p:
+			return false
+	return true
+
+
+## Caminan derecho y en los cruces a veces doblan (no tiemblan al azar en
+## cada paso). Cebollas y fantasmas además giran hacia ti si estás cerca.
 func _update_enemy(e: Dictionary, delta: float) -> void:
 	e["timer"] += delta
 	if e["timer"] < e["interval"]:
@@ -469,12 +532,34 @@ func _update_enemy(e: Dictionary, delta: float) -> void:
 	e["timer"] = 0.0
 	var options: Array = []
 	for d: Vector2i in DIRS:
-		var n: Vector2i = e["pos"] + d
-		if _is_walkable(n):
-			options.append(n)
-	if not options.is_empty():
-		e["pos"] = options[randi() % options.size()]
+		if _enemy_can_enter(e["pos"] + d):
+			options.append(d)
+	if options.is_empty():
+		return
+	var dir: Vector2i = e["dir"]
+	var chase: float = ENEMY_TYPES[e["kind"]]["chase"]
+	var to_player: Vector2i = player_cell - e["pos"]
+	var near: bool = absi(to_player.x) + absi(to_player.y) <= 6
+	if near and randf() < chase:
+		# Elige la salida que más lo acerca al jugador.
+		var best_d: Vector2i = options[0]
+		var best := INF
+		for d: Vector2i in options:
+			var dist: float = Vector2(e["pos"] + d).distance_to(Vector2(player_cell))
+			if dist < best:
+				best = dist
+				best_d = d
+		dir = best_d
+	elif not options.has(dir):
+		# Chocó: se da la vuelta o toma otra salida.
+		dir = options[randi() % options.size()]
+	elif options.size() > 2 and randf() < 0.3:
+		dir = options[randi() % options.size()]  # dobla en un cruce
+	e["dir"] = dir
+	e["pos"] = e["pos"] + dir
 	e["view"].position = _cell_pos(e["pos"], e["view"].size)
+	if dir.x != 0:
+		e["view"].flipped = dir.x < 0
 
 
 func _update_bombs(delta: float) -> void:
@@ -525,6 +610,7 @@ func _apply_explosion(cell: Vector2i) -> Array:
 	## jugador/enemigos. Separado de _explode_bomb (que además dispara el
 	## efecto visual) para poder probar la lógica sin UIKit.pulse.
 	var affected: Array = [cell]
+	var door_hit := false
 	for d: Vector2i in DIRS:
 		for r in range(1, blast_radius + 1):
 			var p: Vector2i = cell + d * r
@@ -533,6 +619,8 @@ func _apply_explosion(cell: Vector2i) -> Array:
 			if cell_type[p.y][p.x] == "wall":
 				break
 			affected.append(p)
+			if cell_type[p.y][p.x] == "door":
+				door_hit = true
 			if cell_type[p.y][p.x] == "soft":
 				if p == door_cell:
 					cell_type[p.y][p.x] = "door"
@@ -551,11 +639,20 @@ func _apply_explosion(cell: Vector2i) -> Array:
 			if e["state"] == "alive" and e["pos"] == p:
 				e["state"] = "removed"
 				e["view"].visible = false
-				score += 100
+				score += int(ENEMY_TYPES[e["kind"]]["points"])
 				_update_hud()
 		for other_b: Dictionary in bombs:
 			if other_b["cell"] == p and other_b["timer"] > 0.0:
 				other_b["timer"] = 0.0  # reacción en cadena: detona en el próximo tick
+
+	# Como en el NES: bombardear la salida ya descubierta la "enoja" y suelta
+	# enemigos rápidos.
+	if door_hit:
+		for i in range(3):
+			_spawn_enemy(door_cell, "fantasma")
+		status_label.text = "¡Bombardeaste la salida! Salieron más enemigos"
+		status_label.add_theme_color_override("font_color", UIKit.COLOR_DANGER)
+		AudioManager.play_alert()
 
 	return affected
 

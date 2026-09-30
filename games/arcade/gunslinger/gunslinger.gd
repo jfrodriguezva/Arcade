@@ -30,6 +30,10 @@ const HIT_FLASH_DURATION := 0.18
 
 const JUMP_DURATION := 0.55  # mientras salta, esquiva balas rasantes (como en Sunset Riders)
 const BOSS_HITS := 6
+const BOSS_NAMES := [
+	"El Tuerto Ramírez", "Black Jack Colby", "La Viuda Negra", "El Coyote", "Doc Sandoval",
+	"Los Hermanos Garza", "El Carnicero", "Pistolas McGraw", "El Diablo Blanco", "Barón Sangriento",
+]
 const WEAPON_DROP_CHANCE := 0.22
 const WEAPON_DURATION := 10.0
 const SHOTGUN_COOLDOWN := 0.34
@@ -41,7 +45,7 @@ Los bandidos entran por los lados: los que se acercan directo te quitan una vida
 
 Algunos bandidos sueltan una escopeta al caer: dispara 3 balas en abanico por tiempo limitado.
 
-Al llegar a la cuota de bandidos, aparece el jefe del nivel — aguanta varios disparos y alterna entre embestidas y ráfagas. Derrótalo para pasar al siguiente nivel. Hay 10 niveles, cada uno con más bandidos, más rápidos y jefes más resistentes. Pierdes si se acaban tus 3 vidas."
+Al llegar a la cuota de bandidos, aparece el cartel de SE BUSCA con la recompensa (y luego el jefe del nivel, que al derrotarlo te paga esa recompensa en puntos) — aguanta varios disparos y alterna entre embestidas y ráfagas. Derrótalo para pasar al siguiente nivel. Hay 10 niveles, cada uno con más bandidos, más rápidos y jefes más resistentes. Pierdes si se acaban tus 3 vidas."
 
 var player_x: float = 0.0
 var facing: int = 1
@@ -330,7 +334,8 @@ func _process(delta: float) -> void:
 
 	if not boss_spawned and kills >= kills_needed and alive_count == 0:
 		boss_spawned = true
-		_spawn_boss()
+		_show_wanted_poster()
+		return
 	elif not boss_spawned:
 		spawn_timer -= delta
 		if spawn_timer <= 0.0 and alive_count < MAX_ON_SCREEN and kills + alive_count < kills_needed:
@@ -424,6 +429,47 @@ func _spawn_enemy_bullet(e: Dictionary) -> void:
 	view.set_facing(90.0 if dir > 0 else -90.0)
 	play_area.add_child(view)
 	enemy_bullets.append({"pos": pos, "vel": Vector2(dir * ENEMY_BULLET_SPEED, 0), "view": view})
+
+
+func _bounty() -> int:
+	return 1000 * level
+
+
+## Como en Sunset Riders: antes de cada jefe aparece su cartel de "SE
+## BUSCA" con la recompensa, y el juego se detiene un momento.
+func _show_wanted_poster() -> void:
+	state = "wanted"
+	var poster := PanelContainer.new()
+	var sb := UIKit.stylebox(Color(0.93, 0.84, 0.62), Color(0.45, 0.28, 0.12), 6, 4)
+	poster.add_theme_stylebox_override("panel", sb)
+	poster.custom_minimum_size = Vector2(300, 0)
+	poster.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var box := VBoxContainer.new()
+	box.alignment = BoxContainer.ALIGNMENT_CENTER
+	box.add_theme_constant_override("separation", 6)
+	poster.add_child(box)
+	var ink := Color(0.3, 0.16, 0.06)
+	for line: Array in [["SE BUSCA", 30], [BOSS_NAMES[(level - 1) % BOSS_NAMES.size()], 20], ["VIVO O MUERTO", 14], ["$ %d" % _bounty(), 26]]:
+		var lbl := Label.new()
+		lbl.text = line[0]
+		lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		lbl.add_theme_font_size_override("font_size", line[1])
+		lbl.add_theme_color_override("font_color", ink)
+		box.add_child(lbl)
+	play_area.add_child(poster)
+	await get_tree().process_frame
+	poster.position = (Vector2(PLAY_W, PLAY_H) - poster.size) / 2.0
+	poster.pivot_offset = poster.size / 2.0
+	poster.scale = Vector2(0.2, 0.2)
+	poster.create_tween().tween_property(poster, "scale", Vector2.ONE, 0.25).set_trans(Tween.TRANS_BACK)
+	AudioManager.play_alert()
+	var my_level: int = level
+	await get_tree().create_timer(2.2).timeout
+	poster.queue_free()
+	if state != "wanted" or level != my_level:
+		return  # se reinició la partida mientras tanto
+	state = "playing"
+	_spawn_boss()
 
 
 func _spawn_boss() -> void:
@@ -566,7 +612,9 @@ func _update_bullets(delta: float) -> void:
 				boss["flash_timer"] = HIT_FLASH_DURATION
 				score += 20
 				if boss["hp"] <= 0:
-					score += 500
+					score += _bounty()
+					status_label.text = "¡Recompensa cobrada! $%d" % _bounty()
+					AudioManager.play_power()
 					boss["view"].queue_free()
 					boss = {}
 				_update_hud()

@@ -1,9 +1,9 @@
 extends Control
-## Atrapa al Topo (whack-a-mole) — arcade clásico, generado de cero. Un
-## topo aparece en un hoyo al azar (nunca dos veces seguidas en el mismo)
-## por un tiempo corto; tocarlo a tiempo suma un punto. Ronda de 30
-## segundos con cuenta regresiva real; la velocidad de aparición sube
-## conforme avanza la ronda — pura reacción y ritmo, sin física continua.
+## Atrapa al Topo (whack-a-mole) — arcade clásico, generado de cero. Los
+## topos salen en hoyos al azar (nunca dos seguidos en el mismo) por un
+## tiempo corto; conforme avanza la ronda de 30 s salen más rápido y
+## pueden aparecer varios a la vez. Hay topos dorados (+3) y bombas que
+## restan si las golpeas.
 
 const GAME_ID := "topo"
 const HOLES := 9
@@ -16,24 +16,33 @@ const MOLE_UP_PER_PROGRESS := 25.0
 const PAUSE_BASE_MS := 500.0
 const PAUSE_MIN_MS := 180.0
 const PAUSE_PER_PROGRESS := 10.0
-const WIN_SCORE := 10
+const WIN_SCORE := 20
 const HOLE_SIZE := 96.0
 const HOLE_COLOR := Color(0.243, 0.165, 0.118)
+const GOLD_COLOR := Color(0.62, 0.48, 0.12)
 const FIELD_COLOR := Color(0.310, 0.686, 0.318)
+## Como en las máquinas de feria: topos dorados que valen más (y se
+## esconden más rápido) y bombas que NO hay que golpear.
+const GOLD_CHANCE := 0.10
+const BOMB_CHANCE := 0.14
 
-const HELP_TEXT := "Un topo aparece en un hoyo al azar. Tócalo antes de que se esconda para sumar un punto.
+const HELP_TEXT := "Los topos salen de hoyos al azar. Tócalos antes de que se escondan.
 
-Tienes 30 segundos por ronda. Entre más avanza la ronda, el topo aparece más rápido y se esconde antes — hay que estar atento.
+- 🐹 topo normal: +1
+- 🐹 en hoyo dorado: +3 (se esconde más rápido)
+- 💣 bomba: ¡NO la toques! −2
 
-Consigue 10 puntos o más para una ronda perfecta."
+Tienes 30 segundos por ronda. Conforme avanza la ronda salen más rápido y pueden aparecer varios a la vez.
 
-var active_hole: int = -1
+Consigue 20 puntos o más para una ronda perfecta."
+
+var holes: Array = []  # por hoyo: {"kind": "" | "mole" | "gold" | "bomb", "t": segundos restantes}
+var last_hole: int = -1
+var hits: int = 0
 var score: int = 0
 var time_left: float = 0.0
 var playing: bool = false
-var mole_showing: bool = false
 var next_appear_timer: float = 0.0
-var mole_hide_timer: float = 0.0
 
 var score_label: Label
 var time_label: Label
@@ -113,24 +122,27 @@ func _build_ui() -> void:
 	vbox.add_child(start_btn)
 
 
+
 func _reset_round() -> void:
 	score = 0
 	time_left = float(ROUND_SECONDS)
-	active_hole = -1
-	mole_showing = false
 	playing = false
 	next_appear_timer = 0.0
-	mole_hide_timer = 0.0
+	last_hole = -1
+	hits = 0
+	holes.clear()
+	for i in range(HOLES):
+		holes.append({"kind": "", "t": 0.0})
+		_style_hole(i)
 	_refresh_hud()
-	for h: Button in hole_views:
-		h.text = ""
 
 
 func _start_round() -> void:
 	_reset_round()
 	playing = true
 	start_btn.text = "🔄  Reiniciar"
-	status_label.text = "¡Atrápalo!"
+	status_label.text = "¡Atrápalos!"
+	status_label.remove_theme_color_override("font_color")
 	_schedule_next_mole()
 
 
@@ -148,6 +160,11 @@ func _mole_up_duration() -> float:
 	return up_ms / 1000.0
 
 
+## Como en el arcade, conforme avanza la ronda pueden salir varios a la vez.
+func _max_up() -> int:
+	return 1 + int(_progress() / 8.0)
+
+
 func _process(delta: float) -> void:
 	if not playing:
 		return
@@ -158,39 +175,90 @@ func _process(delta: float) -> void:
 		return
 	time_label.text = "⏱ %d" % ceili(max(time_left, 0.0))
 
-	if mole_showing:
-		mole_hide_timer -= delta
-		if mole_hide_timer <= 0.0:
-			_hide_mole()
-			_schedule_next_mole()
-	else:
-		next_appear_timer -= delta
-		if next_appear_timer <= 0.0:
-			_show_mole()
+	var up := 0
+	for i in range(HOLES):
+		var h: Dictionary = holes[i]
+		if h["kind"] == "":
+			continue
+		h["t"] -= delta
+		if h["t"] <= 0.0:
+			_hide(i)
+		else:
+			up += 1
+
+	next_appear_timer -= delta
+	if next_appear_timer <= 0.0 and up < _max_up():
+		_show_mole()
+		_schedule_next_mole()
 
 
 func _show_mole() -> void:
-	active_hole = _pick_next_hole(active_hole)
-	hole_views[active_hole].text = "🐹"
-	mole_showing = true
-	mole_hide_timer = _mole_up_duration()
+	var free: Array = []
+	for i in range(HOLES):
+		if holes[i]["kind"] == "" and i != last_hole:
+			free.append(i)
+	if free.is_empty():
+		return
+	var i: int = free[clampi(int(randf() * free.size()), 0, free.size() - 1)]
+	last_hole = i
+	var r: float = randf()
+	var kind := "mole"
+	if _progress() >= 4.0 and r < BOMB_CHANCE:
+		kind = "bomb"
+	elif r < BOMB_CHANCE + GOLD_CHANCE:
+		kind = "gold"
+	holes[i] = {"kind": kind, "t": _mole_up_duration() * (0.75 if kind == "gold" else 1.0)}
+	_style_hole(i)
 
 
-func _hide_mole() -> void:
-	if active_hole != -1:
-		hole_views[active_hole].text = ""
-	active_hole = -1
-	mole_showing = false
+func _hide(i: int) -> void:
+	holes[i] = {"kind": "", "t": 0.0}
+	_style_hole(i)
+
+
+func _style_hole(i: int) -> void:
+	var hole: Button = hole_views[i]
+	var kind: String = holes[i]["kind"] if i < holes.size() else ""
+	hole.text = {"mole": "🐹", "gold": "🐹", "bomb": "💣"}.get(kind, "")
+	var bg: Color = GOLD_COLOR if kind == "gold" else HOLE_COLOR
+	for st: String in ["normal", "hover", "pressed", "disabled"]:
+		hole.add_theme_stylebox_override(st, UIKit.stylebox(bg, Color(1, 0.9, 0.4) if kind == "gold" else Color(0, 0, 0, 0), int(HOLE_SIZE / 2.0), 3 if kind == "gold" else 0))
 
 
 func _whack(idx: int) -> void:
-	if not playing or idx != active_hole:
+	if not playing:
 		return
-	score += 1
-	AudioManager.play_click()
-	_hide_mole()
-	_schedule_next_mole()
+	var kind: String = holes[idx]["kind"]
+	if kind == "":
+		return
+	match kind:
+		"mole":
+			score += 1
+			hits += 1
+			AudioManager.play_click()
+		"gold":
+			score += 3
+			hits += 1
+			AudioManager.play_power()
+			status_label.text = "¡Topo dorado! +3"
+		"bomb":
+			score = maxi(score - 2, 0)
+			AudioManager.play_error()
+			status_label.text = "¡Era una bomba! −2"
+	_flash_hole(idx, kind)
+	_hide(idx)
 	_refresh_hud()
+
+
+## Destello del "martillazo" en el hoyo golpeado.
+func _flash_hole(idx: int, kind: String) -> void:
+	var hole: Button = hole_views[idx]
+	hole.pivot_offset = hole.size / 2.0
+	hole.scale = Vector2(0.86, 0.86)
+	hole.modulate = Color(1.6, 0.6, 0.6) if kind == "bomb" else Color(1.4, 1.4, 1.0)
+	var tw := hole.create_tween().set_parallel(true)
+	tw.tween_property(hole, "scale", Vector2.ONE, 0.15)
+	tw.tween_property(hole, "modulate", Color.WHITE, 0.2)
 
 
 func _refresh_hud() -> void:
@@ -200,7 +268,8 @@ func _refresh_hud() -> void:
 
 func _end_round() -> void:
 	playing = false
-	_hide_mole()
+	for i in range(HOLES):
+		_hide(i)
 	time_left = 0.0
 	time_label.text = "⏱ 0"
 	start_btn.text = "▶  Jugar de nuevo"
@@ -215,17 +284,3 @@ func _end_round() -> void:
 	else:
 		status_label.text = "¡Tiempo! Puntaje final: %d" % score
 		AudioManager.play_lose()
-
-
-func _pick_next_hole(current: int) -> int:
-	## Elige un hoyo distinto al actual sin sesgo de módulo: se multiplica
-	## un azar en [0,1) por el tamaño de la lista de candidatos en vez de
-	## mapear un índice fijo con `%`, que sesgaría un hoyo para que salga
-	## casi el doble de veces que los demás — bug real que se encontró y
-	## arregló en la versión Kotlin de este mismo juego.
-	var candidates: Array = []
-	for i in range(HOLES):
-		if i != current:
-			candidates.append(i)
-	var idx: int = clampi(int(randf() * candidates.size()), 0, candidates.size() - 1)
-	return candidates[idx]

@@ -87,6 +87,11 @@ func _play(stream: AudioStreamWAV, volume_key: String) -> void:
 	p.play()
 
 
+## Golpe grave de "latido" (Asteroids): dos notas alternadas.
+func play_beat(high: bool) -> void:
+	_play(_make_tone(110.0 if high else 98.0, 0.09, "square"), "sfx_volume")
+
+
 func play_click() -> void:
 	_play(_make_tone(740.0, 0.05, "square"), "sfx_volume")
 
