@@ -201,6 +201,14 @@ var games: Array[Dictionary] = [
 		"scene": "res://games/arcade/galaga_swarm/galaga_swarm.tscn",
 		"enabled": true,
 	},
+	{
+		"id": "invasion_espacial",
+		"title": "Invasión Espacial",
+		"icon": "👾",
+		"category": "arcade",
+		"scene": "res://games/arcade/invasion_espacial/invasion_espacial.tscn",
+		"enabled": true,
+	},
 	# --- Arcade: laberinto ------------------------------------------------
 	{
 		"id": "maze_muncher",
