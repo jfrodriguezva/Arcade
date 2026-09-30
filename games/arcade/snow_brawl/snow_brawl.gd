@@ -34,13 +34,45 @@ const LANDING_SQUASH := 0.22
 const ENEMY_COLORS := [
 	UIKit.COLOR_DANGER, Color(0.85, 0.47, 0.16), Color(0.56, 0.30, 0.78), Color(0.20, 0.55, 0.80),
 ]
-const ITEM_DROP_CHANCE := 0.4
+const ITEM_DROP_CHANCE := 0.45
 const ITEM_LIFETIME := 8.0
-const ITEM_VIEW_SIZE := Vector2(26, 26)
+const ITEM_VIEW_SIZE := Vector2(28, 28)
 const MAX_POWER_LEVEL := 2
-const ITEM_WEIGHTS := {"fruit": 62, "power_snow": 30, "extra_life": 8}
-const ITEM_ICON := {"fruit": "🍒", "power_snow": "❄", "extra_life": "❤"}
-const ITEM_COLOR := {"fruit": UIKit.COLOR_DANGER, "power_snow": UIKit.COLOR_ACCENT_2, "extra_life": UIKit.COLOR_ACCENT}
+## Las 4 pociones del Snow Bros original + premios. Duran hasta que pierdes
+## una vida (salvo la verde, que es temporal):
+##   roja = corres más rápido, azul = nieve más potente (congela con menos
+##   golpes), amarilla = la nieve llega más lejos, verde = te inflas y eres
+##   invencible unos segundos (aplastas a los enemigos al tocarlos).
+const ITEM_WEIGHTS := {"fruit": 40, "potion_red": 14, "potion_blue": 14, "potion_yellow": 14, "potion_green": 9, "extra_life": 5}
+const ITEM_ICON := {"fruit": "🍣", "potion_red": "🧪", "potion_blue": "🧪", "potion_yellow": "🧪", "potion_green": "🧪", "extra_life": "❤"}
+const ITEM_COLOR := {
+	"fruit": Color(0.95, 0.55, 0.35), "potion_red": Color(0.95, 0.2, 0.2), "potion_blue": Color(0.25, 0.45, 1.0),
+	"potion_yellow": Color(1.0, 0.85, 0.15), "potion_green": Color(0.25, 0.85, 0.35), "extra_life": UIKit.COLOR_ACCENT,
+}
+const SPEED_POTION_MULT := 1.35
+const RANGE_POTION_MULT := 1.6
+const GREEN_DURATION := 8.0
+const RESPAWN_INVULNERABLE := 2.5
+## Puntos por enemigo derribado con la MISMA bola: se duplican en cadena.
+const CHAIN_BASE_POINTS := 200
+## Los enemigos saltan a la plataforma de arriba y se dejan caer por las
+## orillas, como en el arcade (antes se quedaban en su plataforma).
+const ENEMY_JUMP_VELOCITY := -700.0
+const ENEMY_DROP_CHANCE := 0.35
+const ENEMY_JUMP_COOLDOWN := 2.5
+## Jefes en los niveles 5 y 10: no se congelan con nieve; hay que pegarles
+## con bolas de nieve rodando, hechas con los enemigos que el jefe suelta.
+const BOSS_LEVELS := [5, 10]
+const BOSS_SIZE := Vector2(96, 104)
+const BOSS_HP := {5: 5, 10: 8}
+const BOSS_SPAWN_INTERVAL := 4.0
+const BOSS_MAX_MINIONS := 3
+const BOSS_POINTS := {5: 5000, 10: 10000}
+## "¡Apúrate!": si tardas mucho, aparece un fantasma que no se puede
+## congelar y te persigue atravesando plataformas.
+const HURRY_TIME := 45.0
+const HURRY_GHOST_SPEED := 70.0
+const HURRY_GHOST_SIZE := Vector2(40, 40)
 
 const PLATFORMS := [
 	Rect2(0, 850, 640, 30),
@@ -58,7 +90,13 @@ const HELP_TEXT := "Salta entre plataformas con ◀ ▶ y ⬆. Dispara ❄ para 
 
 Camina hacia un enemigo congelado para empujarlo: se convierte en una bola de nieve que rueda y destruye en cadena a cualquier otro enemigo que toque. ¡Si no lo pateas a tiempo, se descongela solo!
 
-Al destruir enemigos con la bola de nieve, a veces sueltan un ítem: 🍒 puntos extra, ❄ mejora tu nieve (menos golpes para congelar), ❤ vida extra. Recógelos antes de que desaparezcan.
+Derribar varios enemigos con la MISMA bola multiplica los puntos: 200, 400, 800, 1600...
+
+Los enemigos derribados a veces sueltan premios: 🍣 puntos, ❤ vida extra y las pociones 🧪 del original — roja: corres más rápido; azul: tu nieve congela con menos golpes; amarilla: tu nieve llega más lejos; verde: te inflas y eres invencible unos segundos (aplastas a los enemigos al tocarlos). Las pociones se pierden al perder una vida.
+
+Los enemigos saltan entre plataformas y se dejan caer por las orillas. Si tardas demasiado en un nivel, aparece un fantasma que no se puede congelar y te persigue: ¡apúrate!
+
+En los niveles 5 y 10 hay un JEFE: la nieve no lo congela; congela a los enemigos que suelta y lánzaselos rodando para bajarle vida.
 
 Tocar a un enemigo que camina (no congelado) te quita una vida. Limpia todos los enemigos del nivel para avanzar. Hay 10 niveles, cada uno con más enemigos. Pierdes si se acaban tus 3 vidas."
 
@@ -75,6 +113,13 @@ var enemies: Array = []
 var projectiles: Array = []
 var items: Array = []
 var power_level: int = 0
+var speed_potion: bool = false
+var range_potion: bool = false
+var green_timer: float = 0.0
+var invulnerable_timer: float = 0.0
+var level_time: float = 0.0
+var hurry_ghost: Dictionary = {}
+var boss: Dictionary = {}
 
 var score: int = 0
 var lives: int = 3
@@ -231,6 +276,11 @@ func _new_game() -> void:
 	lives = 3
 	level = 1
 	power_level = 0
+	speed_potion = false
+	range_potion = false
+	green_timer = 0.0
+	invulnerable_timer = 0.0
+	player_view.scale = Vector2.ONE
 	state = "playing"
 	_setup_level()
 
@@ -250,32 +300,73 @@ func _setup_level() -> void:
 	for e: Dictionary in enemies:
 		e["view"].queue_free()
 	enemies.clear()
+	_clear_boss()
+	_clear_hurry_ghost()
+	level_time = 0.0
 
-	var count: int = min(2 + level, 10)
-	var speed: float = 60.0 + level * 6.0
+	var is_boss_level: bool = level in BOSS_LEVELS
+	var count: int = 2 if is_boss_level else min(2 + level, 10)
 	for i in range(count):
 		var plat: Rect2 = PLATFORMS[1 + (randi() % (PLATFORMS.size() - 1))]
 		var pos := Vector2(plat.position.x + randf() * max(1.0, plat.size.x - ENEMY_SIZE.x), plat.position.y - ENEMY_SIZE.y)
-		var base_color: Color = ENEMY_COLORS[i % ENEMY_COLORS.size()]
-		var view := EntitySprite.new()
-		view.size = ENEMY_VIEW_SIZE
-		view.position = _enemy_view_pos(pos)
-		view.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		view.setup("snow_enemy", base_color)
-		play_area.add_child(view)
-		enemies.append({
-			"pos": pos, "platform": plat, "dir": (1 if randi() % 2 == 0 else -1),
-			"speed": speed, "base_speed": speed, "state": "walking", "hits": 0, "vel": Vector2.ZERO,
-			"start_x": 0.0, "view": view, "phase": fmod(float(i) * 0.31, 1.0), "base_color": base_color,
-		})
+		_spawn_enemy(pos, plat, i)
+	if is_boss_level:
+		_spawn_boss()
 
-	status_label.text = "Nivel %d / %d" % [level, MAX_LEVEL]
+	status_label.text = "Nivel %d / %d%s" % [level, MAX_LEVEL, "  ·  ¡JEFE!" if is_boss_level else ""]
+	status_label.remove_theme_color_override("font_color")
 	_update_hud()
+
+
+func _enemy_speed() -> float:
+	return 60.0 + level * 6.0
+
+
+func _spawn_enemy(pos: Vector2, plat: Rect2, i: int) -> Dictionary:
+	var base_color: Color = ENEMY_COLORS[i % ENEMY_COLORS.size()]
+	var view := EntitySprite.new()
+	view.size = ENEMY_VIEW_SIZE
+	view.position = _enemy_view_pos(pos)
+	view.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	view.setup("snow_enemy", base_color)
+	play_area.add_child(view)
+	var speed: float = _enemy_speed()
+	var e := {
+		"pos": pos, "platform": plat, "dir": (1 if randi() % 2 == 0 else -1),
+		"speed": speed, "base_speed": speed, "state": "walking", "hits": 0, "vel": Vector2.ZERO,
+		"start_x": 0.0, "view": view, "phase": fmod(float(i) * 0.31, 1.0), "base_color": base_color,
+		"vy": 0.0, "airborne": false, "jump_cd": randf_range(1.0, ENEMY_JUMP_COOLDOWN), "chain": 0,
+	}
+	enemies.append(e)
+	return e
+
+
+func _spawn_boss() -> void:
+	var view := EntitySprite.new()
+	view.size = BOSS_SIZE * 1.15
+	view.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	view.pivot_offset = view.size / 2.0
+	view.setup("snow_enemy", Color(0.55, 0.12, 0.2), Color(1.0, 0.8, 0.2))
+	play_area.add_child(view)
+	var hp: int = BOSS_HP.get(level, 6)
+	var bar := ProgressBar.new()
+	bar.max_value = hp
+	bar.value = hp
+	bar.show_percentage = false
+	bar.size = Vector2(240, 12)
+	bar.position = Vector2(PLAY_W / 2.0 - 120.0, 8.0)
+	bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	bar.add_theme_stylebox_override("background", UIKit.stylebox(Color(0.3, 0.05, 0.05), Color(0, 0, 0, 0), 5))
+	bar.add_theme_stylebox_override("fill", UIKit.stylebox(UIKit.COLOR_DANGER, Color(0, 0, 0, 0), 5))
+	play_area.add_child(bar)
+	var pos := Vector2(PLAY_W - BOSS_SIZE.x - 40.0, PLATFORMS[0].position.y - BOSS_SIZE.y)
+	boss = {"pos": pos, "vy": 0.0, "dir": -1, "hp": hp, "view": view, "bar": bar,
+		"spawn_timer": 2.0, "hop_timer": 3.0, "hurt": 0.0, "phase": 0.0}
 
 
 func _update_hud() -> void:
 	score_label.text = "Puntos: %d" % score
-	lives_label.text = "❤ %d" % lives
+	lives_label.text = "❤ %d%s" % [lives, _potion_text()]
 
 
 func _sync_player_view() -> void:
@@ -292,10 +383,11 @@ func _sync_player_view() -> void:
 func _play_landing_squash() -> void:
 	## Aplaste breve y no-bloqueante al aterrizar, para que el salto se
 	## sienta con más peso/impacto en vez de solo detenerse en seco.
+	var base: float = 1.35 if green_timer > 0.0 else 1.0  # inflado por la poción verde
 	player_view.pivot_offset = player_view.size * Vector2(0.5, 1.0)
-	player_view.scale = Vector2(1.0 + LANDING_SQUASH, 1.0 - LANDING_SQUASH)
+	player_view.scale = Vector2(1.0 + LANDING_SQUASH, 1.0 - LANDING_SQUASH) * base
 	var tw := create_tween()
-	tw.tween_property(player_view, "scale", Vector2.ONE, 0.16).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tw.tween_property(player_view, "scale", Vector2.ONE * base, 0.16).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 
 
 func _enemy_view_pos(pos: Vector2) -> Vector2:
@@ -338,14 +430,130 @@ func _process(delta: float) -> void:
 
 	if shoot_cooldown > 0.0:
 		shoot_cooldown -= delta
+	level_time += delta
+	if green_timer > 0.0:
+		green_timer -= delta
+		if green_timer <= 0.0:
+			player_view.scale = Vector2.ONE
+			_update_hud()
+	if invulnerable_timer > 0.0:
+		invulnerable_timer -= delta
+	player_view.modulate.a = 0.45 if invulnerable_timer > 0.0 and int(invulnerable_timer * 10.0) % 2 == 0 else 1.0
 
 	_update_player(delta)
+	if state != "playing":
+		return
 	_update_enemies(delta)
+	_update_boss(delta)
+	_update_hurry_ghost(delta)
 	_update_projectiles(delta)
 	_update_items(delta)
 
-	if _all_enemies_cleared():
+	if state == "playing" and _all_enemies_cleared():
 		_advance_level()
+
+
+# --- Jefe -------------------------------------------------------------------
+func _clear_boss() -> void:
+	if boss.is_empty():
+		return
+	boss["view"].queue_free()
+	boss["bar"].queue_free()
+	boss = {}
+
+
+func _update_boss(delta: float) -> void:
+	if boss.is_empty():
+		return
+	var ground: float = PLATFORMS[0].position.y
+	boss["phase"] = fmod(boss["phase"] + delta * 2.0, 1.0)
+	boss["pos"].x += boss["dir"] * (70.0 + level * 4.0) * delta
+	if boss["pos"].x < 10.0 or boss["pos"].x > PLAY_W - BOSS_SIZE.x - 10.0:
+		boss["dir"] *= -1
+		boss["pos"].x = clampf(boss["pos"].x, 10.0, PLAY_W - BOSS_SIZE.x - 10.0)
+	# Da brincos pesados de vez en cuando.
+	boss["hop_timer"] -= delta
+	if boss["hop_timer"] <= 0.0 and boss["pos"].y >= ground - BOSS_SIZE.y - 0.5:
+		boss["vy"] = -560.0
+		boss["hop_timer"] = randf_range(2.5, 4.0)
+	boss["vy"] += GRAVITY * delta
+	boss["pos"].y = minf(boss["pos"].y + boss["vy"] * delta, ground - BOSS_SIZE.y)
+	if boss["pos"].y >= ground - BOSS_SIZE.y:
+		boss["vy"] = 0.0
+	# Suelta enemigos (la "munición" para hacerle daño).
+	boss["spawn_timer"] -= delta
+	if boss["spawn_timer"] <= 0.0:
+		boss["spawn_timer"] = BOSS_SPAWN_INTERVAL
+		var alive := 0
+		for e: Dictionary in enemies:
+			if e["state"] == "walking" or e["state"] == "frozen":
+				alive += 1
+		if alive < BOSS_MAX_MINIONS:
+			var m: Dictionary = _spawn_enemy(boss["pos"] + Vector2(BOSS_SIZE.x / 2.0 - ENEMY_SIZE.x / 2.0, 0), PLATFORMS[0], randi())
+			m["airborne"] = true
+			m["vy"] = -520.0
+	if boss["hurt"] > 0.0:
+		boss["hurt"] -= delta
+	var v: EntitySprite = boss["view"]
+	v.position = boss["pos"] + BOSS_SIZE / 2.0 - v.size / 2.0 + Vector2(0, -v.size.y * 0.06)
+	v.set_facing(0.0, boss["dir"] < 0)
+	v.set_phase(boss["phase"])
+	v.modulate = Color(1, 0.5, 0.5) if boss["hurt"] > 0.0 else Color.WHITE
+	if invulnerable_timer <= 0.0 and Rect2(player_pos, PLAYER_SIZE).intersects(_boss_rect().grow(-8.0)):
+		_lose_life()
+
+
+func _boss_rect() -> Rect2:
+	return Rect2(boss["pos"], BOSS_SIZE)
+
+
+func _hit_boss() -> void:
+	boss["hp"] -= 1
+	boss["hurt"] = 0.35
+	boss["bar"].value = boss["hp"]
+	_spawn_impact_burst(boss["pos"] + BOSS_SIZE / 2.0)
+	AudioManager.play_alert()
+	if boss["hp"] > 0:
+		return
+	score += BOSS_POINTS.get(level, 5000)
+	_update_hud()
+	_clear_boss()
+	# Al caer el jefe, sus enemigos desaparecen con él.
+	for e: Dictionary in enemies:
+		if e["state"] != "removed":
+			_spawn_impact_burst(e["pos"] + ENEMY_SIZE / 2.0)
+			_remove_enemy(e)
+	AudioManager.play_power()
+
+
+# --- Fantasma de "¡Apúrate!" ------------------------------------------------
+func _clear_hurry_ghost() -> void:
+	if not hurry_ghost.is_empty():
+		hurry_ghost["view"].queue_free()
+	hurry_ghost = {}
+
+
+func _update_hurry_ghost(delta: float) -> void:
+	if hurry_ghost.is_empty():
+		if level_time >= HURRY_TIME and boss.is_empty():
+			var view := EntitySprite.new()
+			view.size = HURRY_GHOST_SIZE
+			view.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			view.setup("ghost", Color(0.85, 0.85, 0.95), Color(0.5, 0.2, 0.7))
+			play_area.add_child(view)
+			hurry_ghost = {"pos": Vector2(PLAY_W / 2.0, -HURRY_GHOST_SIZE.y), "view": view, "phase": 0.0}
+			status_label.text = "¡APÚRATE!"
+			status_label.add_theme_color_override("font_color", UIKit.COLOR_DANGER)
+			AudioManager.play_alert()
+		return
+	var target: Vector2 = player_pos + PLAYER_SIZE / 2.0 - HURRY_GHOST_SIZE / 2.0
+	hurry_ghost["pos"] = hurry_ghost["pos"].move_toward(target, (HURRY_GHOST_SPEED + level * 4.0) * delta)
+	hurry_ghost["phase"] = fmod(hurry_ghost["phase"] + delta, 1.0)
+	hurry_ghost["view"].position = hurry_ghost["pos"]
+	hurry_ghost["view"].set_phase(hurry_ghost["phase"])
+	if invulnerable_timer <= 0.0 and green_timer <= 0.0 \
+			and Rect2(player_pos, PLAYER_SIZE).intersects(Rect2(hurry_ghost["pos"], HURRY_GHOST_SIZE).grow(-8.0)):
+		_lose_life()
 
 
 func _update_player(delta: float) -> void:
@@ -354,11 +562,12 @@ func _update_player(delta: float) -> void:
 	# Aceleración/frenado suave en vez de fijar la velocidad de golpe: se
 	# siente menos rígido al arrancar y al parar.
 	var target_vx := 0.0
+	var speed: float = MOVE_SPEED * (SPEED_POTION_MULT if speed_potion else 1.0)
 	if moving_left and not moving_right:
-		target_vx = -MOVE_SPEED
+		target_vx = -speed
 		facing = -1
 	elif moving_right and not moving_left:
-		target_vx = MOVE_SPEED
+		target_vx = speed
 		facing = 1
 	player_vel.x = move_toward(player_vel.x, target_vx, MOVE_ACCEL * delta)
 
@@ -392,6 +601,15 @@ func _update_player(delta: float) -> void:
 	var player_rect := Rect2(player_pos, PLAYER_SIZE)
 	for e: Dictionary in enemies:
 		if e["state"] == "walking" and player_rect.intersects(Rect2(e["pos"], ENEMY_SIZE)):
+			if green_timer > 0.0:
+				# Poción verde: inflado e invencible, aplasta al enemigo.
+				_spawn_impact_burst(e["pos"] + ENEMY_SIZE / 2.0)
+				_remove_enemy(e)
+				score += 100
+				_update_hud()
+				continue
+			if invulnerable_timer > 0.0:
+				continue
 			_lose_life()
 			return
 		if e["state"] == "frozen" and player_rect.intersects(Rect2(e["pos"], ENEMY_SIZE)) and player_vel.x != 0.0:
@@ -402,6 +620,7 @@ func _kick_snowball(e: Dictionary, dir: float) -> void:
 	e["state"] = "rolling"
 	e["vel"] = Vector2(SNOWBALL_SPEED * (1.0 if dir >= 0.0 else -1.0), 0.0)
 	e["start_x"] = e["pos"].x
+	e["chain"] = 0
 	e["view"].setup("snowball", Color.WHITE)
 	AudioManager.play_click()
 
@@ -414,6 +633,9 @@ func _update_enemies(delta: float) -> void:
 			"rolling":
 				_update_rolling_enemy(e, delta)
 			"frozen":
+				if e["airborne"]:
+					_enemy_air_step(e, delta)
+					e["view"].position = _enemy_view_pos(e["pos"])
 				e["frozen_timer"] -= delta
 				if e["frozen_timer"] <= 0.0:
 					_thaw_enemy(e)
@@ -432,8 +654,55 @@ func _effective_freeze_hits() -> int:
 	return max(1, FREEZE_HITS - power_level)
 
 
-func _update_walking_enemy(e: Dictionary, delta: float) -> void:
+## Gravedad de un enemigo en el aire (saltando o cayendo de una orilla):
+## aterriza en la primera plataforma que encuentre al bajar, igual que el
+## jugador (se puede atravesar una plataforma desde abajo).
+func _enemy_air_step(e: Dictionary, delta: float) -> void:
+	var prev_bottom: float = e["pos"].y + ENEMY_SIZE.y
+	e["vy"] += GRAVITY * delta
+	e["pos"].y += e["vy"] * delta
+	if e["vy"] < 0.0:
+		return
+	var new_bottom: float = e["pos"].y + ENEMY_SIZE.y
+	for p: Rect2 in PLATFORMS:
+		var within_x: bool = e["pos"].x + ENEMY_SIZE.x > p.position.x and e["pos"].x < p.position.x + p.size.x
+		if within_x and prev_bottom <= p.position.y + 6.0 and new_bottom >= p.position.y:
+			e["pos"].y = p.position.y - ENEMY_SIZE.y
+			e["vy"] = 0.0
+			e["airborne"] = false
+			e["platform"] = p
+			return
+
+
+## Plataforma a la que el enemigo podría saltar desde la suya: justo
+## arriba (a alcance de salto) y traslapada en x con su posición.
+func _platform_above(e: Dictionary) -> bool:
 	var plat: Rect2 = e["platform"]
+	var cx: float = e["pos"].x + ENEMY_SIZE.x / 2.0
+	for p: Rect2 in PLATFORMS:
+		var dy: float = plat.position.y - p.position.y
+		if dy > 60.0 and dy < 170.0 and cx > p.position.x + 10.0 and cx < p.position.x + p.size.x - 10.0:
+			return true
+	return false
+
+
+func _update_walking_enemy(e: Dictionary, delta: float) -> void:
+	if e["airborne"]:
+		e["pos"].x = clampf(e["pos"].x + e["dir"] * e["speed"] * delta, 0.0, PLAY_W - ENEMY_SIZE.x)
+		_enemy_air_step(e, delta)
+		e["view"].position = _enemy_view_pos(e["pos"])
+		return
+	var plat: Rect2 = e["platform"]
+
+	# Salta a la plataforma de arriba si el jugador está más arriba.
+	e["jump_cd"] -= delta
+	if e["jump_cd"] <= 0.0:
+		e["jump_cd"] = ENEMY_JUMP_COOLDOWN
+		var player_above: bool = player_pos.y + PLAYER_SIZE.y < plat.position.y - 30.0
+		if player_above and _platform_above(e) and randf() < 0.6:
+			e["airborne"] = true
+			e["vy"] = ENEMY_JUMP_VELOCITY
+			return
 
 	# IA ligera: si el jugador está en la misma plataforma y cerca, el
 	# enemigo se voltea hacia él y acelera, en vez de solo patrullar de
@@ -447,12 +716,24 @@ func _update_walking_enemy(e: Dictionary, delta: float) -> void:
 		e["dir"] = 1 if dx > 0.0 else -1
 
 	e["pos"].x += e["dir"] * speed_now * delta
-	if e["pos"].x < plat.position.x:
-		e["pos"].x = plat.position.x
-		e["dir"] = 1
-	elif e["pos"].x + ENEMY_SIZE.x > plat.position.x + plat.size.x:
-		e["pos"].x = plat.position.x + plat.size.x - ENEMY_SIZE.x
-		e["dir"] = -1
+	var at_left: bool = e["pos"].x < plat.position.x
+	var at_right: bool = e["pos"].x + ENEMY_SIZE.x > plat.position.x + plat.size.x
+	if at_left or at_right:
+		# En la orilla: a veces se deja caer a la plataforma de abajo (si no
+		# es el piso ni el borde de la pantalla); si no, se da la vuelta.
+		var can_drop: bool = plat != PLATFORMS[0] and e["pos"].x > 2.0 and e["pos"].x < PLAY_W - ENEMY_SIZE.x - 2.0
+		if can_drop and randf() < ENEMY_DROP_CHANCE:
+			e["airborne"] = true
+			e["vy"] = 0.0
+			# Totalmente fuera de la orilla: si queda traslapado, "aterriza"
+			# otra vez en su propia plataforma al siguiente frame.
+			e["pos"].x = plat.position.x - ENEMY_SIZE.x - 1.0 if at_left else plat.position.x + plat.size.x + 1.0
+		elif at_left:
+			e["pos"].x = plat.position.x
+			e["dir"] = 1
+		else:
+			e["pos"].x = plat.position.x + plat.size.x - ENEMY_SIZE.x
+			e["dir"] = -1
 	e["phase"] = fmod(float(e["phase"]) + delta * (4.4 if aggro else 3.0), 1.0)
 	e["view"].position = _enemy_view_pos(e["pos"])
 	e["view"].set_facing(0.0, e["dir"] < 0)
@@ -485,13 +766,20 @@ func _update_rolling_enemy(e: Dictionary, delta: float) -> void:
 		return
 
 	var ball_rect := Rect2(e["pos"], ENEMY_SIZE)
+	if not boss.is_empty() and ball_rect.intersects(_boss_rect()):
+		# La bola revienta contra el jefe y le quita vida.
+		_remove_enemy(e)
+		_hit_boss()
+		return
 	for other: Dictionary in enemies:
-		if other == e or other["state"] == "removed" or other["state"] == "rolling":
+		if is_same(other, e) or other["state"] == "removed" or other["state"] == "rolling":
 			continue
 		if ball_rect.intersects(Rect2(other["pos"], ENEMY_SIZE)):
 			_spawn_impact_burst(other["pos"] + ENEMY_SIZE / 2.0)
 			_remove_enemy(other)
-			score += 100
+			# Cadena: cada enemigo que tumba la MISMA bola vale el doble.
+			score += CHAIN_BASE_POINTS * int(pow(2.0, mini(e["chain"], 5)))
+			e["chain"] += 1
 			_update_hud()
 			if randf() < ITEM_DROP_CHANCE:
 				_spawn_item(other["pos"] + ENEMY_SIZE / 2.0)
@@ -526,19 +814,23 @@ func _update_projectiles(delta: float) -> void:
 		p["view"].position = p["pos"] - Vector2(2.0, 2.0)
 
 		var traveled: float = p["pos"].distance_to(p["start_pos"])
-		var range_t: float = clamp(traveled / SNOW_RANGE, 0.0, 1.0)
+		var snow_range: float = SNOW_RANGE * (RANGE_POTION_MULT if range_potion else 1.0)
+		var range_t: float = clamp(traveled / snow_range, 0.0, 1.0)
 		p["view"].scale = Vector2.ONE * lerp(0.85, 1.5, range_t)
 		p["view"].modulate.a = 1.0 - range_t * range_t
 
-		if p["pos"].x < 0.0 or p["pos"].x > PLAY_W or traveled >= SNOW_RANGE:
+		if p["pos"].x < 0.0 or p["pos"].x > PLAY_W or traveled >= snow_range:
 			p["view"].queue_free()
 			projectiles.remove_at(i)
 			continue
 
 		var proj_rect := Rect2(p["pos"], Vector2(12, 12))
 		var hit := false
+		if not boss.is_empty() and proj_rect.intersects(_boss_rect()):
+			# La nieve no congela al jefe: se deshace contra él.
+			hit = true
 		for e: Dictionary in enemies:
-			if e["state"] != "walking":
+			if hit or e["state"] != "walking":
 				continue
 			if proj_rect.intersects(Rect2(e["pos"], ENEMY_SIZE)):
 				e["hits"] += 1
@@ -609,16 +901,40 @@ func _update_items(delta: float) -> void:
 func _apply_item(kind: String) -> void:
 	match kind:
 		"fruit":
-			score += 50
-		"power_snow":
+			score += 500
+		"potion_red":
+			speed_potion = true
+		"potion_blue":
 			power_level = min(power_level + 1, MAX_POWER_LEVEL)
+		"potion_yellow":
+			range_potion = true
+		"potion_green":
+			green_timer = GREEN_DURATION
+			player_view.pivot_offset = player_view.size * Vector2(0.5, 1.0)
+			player_view.scale = Vector2(1.35, 1.35)
 		"extra_life":
 			lives += 1
 	AudioManager.play_place()
 	_update_hud()
 
 
+## Estado de pociones visible en el HUD (se pierden al perder una vida).
+func _potion_text() -> String:
+	var s := ""
+	if speed_potion:
+		s += " 🔴"
+	if power_level > 0:
+		s += " 🔵" + ("x2" if power_level > 1 else "")
+	if range_potion:
+		s += " 🟡"
+	if green_timer > 0.0:
+		s += " 🟢"
+	return s
+
+
 func _all_enemies_cleared() -> bool:
+	if not boss.is_empty():
+		return false  # en nivel de jefe, se pasa solo al derrotarlo
 	for e: Dictionary in enemies:
 		if e["state"] != "removed":
 			return false
@@ -627,6 +943,13 @@ func _all_enemies_cleared() -> bool:
 
 func _lose_life() -> void:
 	lives -= 1
+	# Como en el original, al morir pierdes todas tus pociones.
+	power_level = 0
+	speed_potion = false
+	range_potion = false
+	green_timer = 0.0
+	player_view.scale = Vector2.ONE
+	invulnerable_timer = RESPAWN_INVULNERABLE
 	_update_hud()
 	if lives <= 0:
 		state = "game_over"
