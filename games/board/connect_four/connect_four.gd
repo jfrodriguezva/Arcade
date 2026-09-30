@@ -257,7 +257,7 @@ func _bot_move() -> void:
 		"medium":
 			chosen = _pick_greedy_move(moves)
 		_:
-			chosen = _pick_minimax_move(moves, 4)
+			chosen = _engine_pick(moves)
 
 	var row: int = _drop(board, chosen, "bot")
 
@@ -454,3 +454,164 @@ func _record_result(key: String) -> void:
 	var stats: Dictionary = SaveManager.get_game_data(GAME_ID)
 	stats[key] = stats.get(key, 0) + 1
 	SaveManager.set_game_data(GAME_ID, stats)
+
+
+# --- Motor de IA para Difícil ---------------------------------------------
+# Antes Difícil calculaba solo 4 jugadas. Ahora: tablero compacto (fila 0 =
+# arriba, 1 máquina / -1 jugador), columnas del centro hacia afuera
+# (mejor poda), revisión de 4 en línea solo alrededor de la última ficha,
+# y profundización iterativa con alfa-beta hasta agotar ~1 s: suele ver
+# 8-10 jugadas adelante, y prefiere ganar rápido y perder tarde.
+
+const C4_TIME_MS := 1000
+const C4_WIN := 1000000.0
+const C4_ORDER := [3, 2, 4, 1, 5, 0, 6]
+
+var _c4_deadline: int = 0
+var _c4_nodes: int = 0
+var _c4_aborted: bool = false
+
+
+func _engine_pick(moves: Array) -> int:
+	var b := PackedInt32Array()
+	b.resize(ROWS * COLS)
+	var heights := PackedInt32Array()
+	heights.resize(COLS)
+	for x in range(COLS):
+		heights[x] = ROWS  # siguiente fila libre + 1 (ROWS = columna vacía)
+		for y in range(ROWS):
+			var v: Variant = board[y][x]
+			if v != null:
+				b[y * COLS + x] = 1 if v == "bot" else -1
+				if y < heights[x]:
+					heights[x] = y
+	# Victoria inmediata o bloqueo obligado: no hace falta buscar.
+	for side in [1, -1]:
+		for x: int in C4_ORDER:
+			if moves.has(x):
+				var y: int = heights[x] - 1
+				b[y * COLS + x] = side
+				var wins: bool = _c4_wins_at(b, x, y, side)
+				b[y * COLS + x] = 0
+				if wins:
+					return x
+	_c4_deadline = Time.get_ticks_msec() + C4_TIME_MS
+	_c4_aborted = false
+	_c4_nodes = 0
+	var root: Array = []
+	for x: int in C4_ORDER:
+		if moves.has(x):
+			root.append(x)
+	var best: int = root[0]
+	var empties := 0
+	for v in b:
+		if v == 0:
+			empties += 1
+	for depth in range(1, empties + 1):
+		var alpha: float = -INF
+		var depth_best: int = root[0]
+		var scores: Dictionary = {}
+		for x: int in root:
+			heights[x] -= 1
+			var y: int = heights[x]
+			b[y * COLS + x] = 1
+			var sc: float
+			if _c4_wins_at(b, x, y, 1):
+				sc = C4_WIN
+			else:
+				sc = -_c4_search(b, heights, depth - 1, -INF, -alpha, -1, 1)
+			b[y * COLS + x] = 0
+			heights[x] += 1
+			if _c4_aborted:
+				break
+			scores[x] = sc
+			if sc > alpha:
+				alpha = sc
+				depth_best = x
+		if _c4_aborted:
+			break
+		best = depth_best
+		if absf(alpha) >= C4_WIN - 100.0:
+			break  # ya sabe cómo termina
+		root.sort_custom(func(a: int, c: int) -> bool: return scores.get(a, -INF) > scores.get(c, -INF))
+	return best
+
+
+func _c4_search(b: PackedInt32Array, heights: PackedInt32Array, depth: int, alpha: float, beta: float, side: int, ply: int) -> float:
+	_c4_nodes += 1
+	if (_c4_nodes & 1023) == 0 and Time.get_ticks_msec() > _c4_deadline:
+		_c4_aborted = true
+	if _c4_aborted:
+		return 0.0
+	if depth <= 0:
+		return side * _c4_eval(b)
+	var best: float = -INF
+	var any := false
+	for x: int in C4_ORDER:
+		if heights[x] == 0:
+			continue
+		any = true
+		heights[x] -= 1
+		var y: int = heights[x]
+		b[y * COLS + x] = side
+		var sc: float
+		if _c4_wins_at(b, x, y, side):
+			sc = C4_WIN - ply  # ganar antes vale más
+		else:
+			sc = -_c4_search(b, heights, depth - 1, -beta, -alpha, -side, ply + 1)
+		b[y * COLS + x] = 0
+		heights[x] += 1
+		if _c4_aborted:
+			return 0.0
+		if sc > best:
+			best = sc
+		if sc > alpha:
+			alpha = sc
+		if alpha >= beta:
+			break
+	if not any:
+		return 0.0  # tablero lleno: empate
+	return best
+
+
+func _c4_wins_at(b: PackedInt32Array, x: int, y: int, side: int) -> bool:
+	for d: Vector2i in [Vector2i(1, 0), Vector2i(0, 1), Vector2i(1, 1), Vector2i(1, -1)]:
+		var count := 1
+		for s in [1, -1]:
+			var nx: int = x + d.x * s
+			var ny: int = y + d.y * s
+			while nx >= 0 and nx < COLS and ny >= 0 and ny < ROWS and b[ny * COLS + nx] == side:
+				count += 1
+				nx += d.x * s
+				ny += d.y * s
+		if count >= 4:
+			return true
+	return false
+
+
+## Ventanas de 4: cuántas líneas posibles tiene cada quien a medio llenar.
+func _c4_eval(b: PackedInt32Array) -> float:
+	var score := 0.0
+	for y in range(ROWS):
+		var c: int = b[y * COLS + COLS / 2]
+		score += 3.0 * c
+	for d: Vector2i in [Vector2i(1, 0), Vector2i(0, 1), Vector2i(1, 1), Vector2i(1, -1)]:
+		for y in range(ROWS):
+			for x in range(COLS):
+				var ex: int = x + d.x * 3
+				var ey: int = y + d.y * 3
+				if ex < 0 or ex >= COLS or ey < 0 or ey >= ROWS:
+					continue
+				var mine := 0
+				var theirs := 0
+				for i in range(4):
+					var v: int = b[(y + d.y * i) * COLS + (x + d.x * i)]
+					if v == 1:
+						mine += 1
+					elif v == -1:
+						theirs += 1
+				if theirs == 0 and mine > 0:
+					score += [0.0, 1.0, 4.0, 20.0][mine]
+				elif mine == 0 and theirs > 0:
+					score -= [0.0, 1.0, 4.0, 22.0][theirs]
+	return score

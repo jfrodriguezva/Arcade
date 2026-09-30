@@ -295,7 +295,7 @@ func _bot_move(moves: Array) -> void:
 		"medium":
 			chosen = _pick_greedy_move(moves)
 		_:
-			chosen = _pick_minimax_move(moves, 3)
+			chosen = _engine_pick(moves)
 	var flips: Array = _place(chosen.x, chosen.y, "bot")
 	_redraw_all()
 	_animate_flips(chosen.x, chosen.y, flips)
@@ -408,3 +408,204 @@ func _record_result(key: String) -> void:
 	var stats: Dictionary = SaveManager.get_game_data(GAME_ID)
 	stats[key] = stats.get(key, 0) + 1
 	SaveManager.set_game_data(GAME_ID, stats)
+
+
+# --- Motor de IA para Difícil ---------------------------------------------
+# Tablero compacto de 64 enteros: 1 máquina, -1 jugador, 0 vacío. Antes
+# Difícil miraba 3 jugadas con solo el valor fijo de cada casilla; ahora:
+# profundización iterativa con alfa-beta (~1.2 s), evaluación con
+# movilidad (cuántas jugadas deja a cada quien), esquinas, casillas X/C
+# peligrosas solo mientras su esquina siga vacía, y conteo exacto de
+# fichas en el final: con 12 casillas vacías o menos intenta resolver la
+# partida hasta el último movimiento.
+
+const O_TIME_MS := 1200
+const O_EXACT_EMPTIES := 12
+const O_WIN := 100000.0
+const O_CORNERS := [0, 7, 56, 63]
+## Casillas X y C de cada esquina (peligrosas si la esquina está vacía).
+const O_CORNER_NEIGHBORS := {0: [1, 8, 9], 7: [6, 15, 14], 56: [48, 57, 49], 63: [62, 55, 54]}
+const O_DIRS := [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1), Vector2i(1, 1), Vector2i(1, -1), Vector2i(-1, 1), Vector2i(-1, -1)]
+
+var _o_deadline: int = 0
+var _o_nodes: int = 0
+var _o_aborted: bool = false
+
+
+func _engine_pick(moves: Array) -> Vector2i:
+	var b := PackedInt32Array()
+	b.resize(64)
+	for y in range(SIZE):
+		for x in range(SIZE):
+			if board[y][x] == "bot":
+				b[y * 8 + x] = 1
+			elif board[y][x] == "player":
+				b[y * 8 + x] = -1
+	var root: Array = []
+	for m: Vector2i in moves:
+		root.append(m.y * 8 + m.x)
+	root.shuffle()
+	_o_order(root)
+	var empties := 0
+	for v in b:
+		if v == 0:
+			empties += 1
+	_o_deadline = Time.get_ticks_msec() + O_TIME_MS
+	_o_aborted = false
+	_o_nodes = 0
+	var best: int = root[0]
+	var max_depth: int = maxi(empties, 1)
+	for depth in range(1, max_depth + 1):
+		var alpha: float = -INF
+		var depth_best: int = root[0]
+		var scores: Dictionary = {}
+		for m: int in root:
+			var flips: PackedInt32Array = _o_make(b, m, 1)
+			var sc: float = -_o_search(b, depth - 1, -INF, -alpha, -1, false)
+			_o_unmake(b, m, flips)
+			if _o_aborted:
+				break
+			scores[m] = sc
+			if sc > alpha:
+				alpha = sc
+				depth_best = m
+		if _o_aborted:
+			break
+		best = depth_best
+		root.sort_custom(func(a: int, c: int) -> bool: return scores.get(a, -INF) > scores.get(c, -INF))
+	return Vector2i(best % 8, best / 8)
+
+
+func _o_search(b: PackedInt32Array, depth: int, alpha: float, beta: float, side: int, passed: bool) -> float:
+	_o_nodes += 1
+	if (_o_nodes & 255) == 0 and Time.get_ticks_msec() > _o_deadline:
+		_o_aborted = true
+	if _o_aborted:
+		return 0.0
+	var moves: Array = _o_moves(b, side)
+	if moves.is_empty():
+		if passed:
+			return side * _o_final(b)
+		return -_o_search(b, depth, -beta, -alpha, -side, true)
+	if depth <= 0:
+		return side * _o_eval(b)
+	_o_order(moves)
+	var best: float = -INF
+	for m: int in moves:
+		var flips: PackedInt32Array = _o_make(b, m, side)
+		var sc: float = -_o_search(b, depth - 1, -beta, -alpha, -side, false)
+		_o_unmake(b, m, flips)
+		if _o_aborted:
+			return 0.0
+		if sc > best:
+			best = sc
+		if sc > alpha:
+			alpha = sc
+		if alpha >= beta:
+			break
+	return best
+
+
+## Partida terminada: gana quien tenga más fichas (desde la máquina).
+func _o_final(b: PackedInt32Array) -> float:
+	var diff := 0
+	for v in b:
+		diff += v
+	return O_WIN * signf(diff) + diff * 100.0
+
+
+func _o_eval(b: PackedInt32Array) -> float:
+	var score := 0.0
+	var empties := 0
+	var discs := 0
+	for sq in range(64):
+		var v: int = b[sq]
+		if v == 0:
+			empties += 1
+			continue
+		discs += v
+		score += v * POSITION_WEIGHTS[sq / 8][sq % 8]
+	# Las casillas junto a una esquina ya ocupada dejan de ser peligrosas:
+	# se descuenta la penalización que les puso la tabla.
+	for c: int in O_CORNERS:
+		if b[c] != 0:
+			score += b[c] * 30.0
+			for n: int in O_CORNER_NEIGHBORS[c]:
+				if b[n] != 0:
+					score -= b[n] * POSITION_WEIGHTS[n / 8][n % 8]
+	# Movilidad: dejar al rival sin buenas jugadas es la clave del Otelo.
+	var mob_bot: int = _o_moves(b, 1).size()
+	var mob_pl: int = _o_moves(b, -1).size()
+	if mob_bot + mob_pl > 0:
+		score += 60.0 * float(mob_bot - mob_pl) / float(mob_bot + mob_pl + 2)
+	# Ya casi al final, las fichas en sí empiezan a contar.
+	if empties < 16:
+		score += discs * (16 - empties) * 0.6
+	return score
+
+
+func _o_order(moves: Array) -> void:
+	moves.sort_custom(func(a: int, c: int) -> bool:
+		return POSITION_WEIGHTS[a / 8][a % 8] > POSITION_WEIGHTS[c / 8][c % 8])
+
+
+func _o_moves(b: PackedInt32Array, side: int) -> Array:
+	var out: Array = []
+	for sq in range(64):
+		if b[sq] == 0 and _o_has_flip(b, sq, side):
+			out.append(sq)
+	return out
+
+
+func _o_has_flip(b: PackedInt32Array, sq: int, side: int) -> bool:
+	var x: int = sq % 8
+	var y: int = sq / 8
+	for d: Vector2i in O_DIRS:
+		var nx: int = x + d.x
+		var ny: int = y + d.y
+		var seen := false
+		while nx >= 0 and nx < 8 and ny >= 0 and ny < 8:
+			var v: int = b[ny * 8 + nx]
+			if v == -side:
+				seen = true
+			elif v == side:
+				if seen:
+					return true
+				break
+			else:
+				break
+			nx += d.x
+			ny += d.y
+	return false
+
+
+func _o_make(b: PackedInt32Array, sq: int, side: int) -> PackedInt32Array:
+	var flips := PackedInt32Array()
+	var x: int = sq % 8
+	var y: int = sq / 8
+	for d: Vector2i in O_DIRS:
+		var nx: int = x + d.x
+		var ny: int = y + d.y
+		var line := PackedInt32Array()
+		while nx >= 0 and nx < 8 and ny >= 0 and ny < 8:
+			var t: int = ny * 8 + nx
+			if b[t] == -side:
+				line.append(t)
+			elif b[t] == side:
+				flips.append_array(line)
+				break
+			else:
+				break
+			nx += d.x
+			ny += d.y
+	b[sq] = side
+	for t in flips:
+		b[t] = side
+	return flips
+
+
+func _o_unmake(b: PackedInt32Array, sq: int, flips: PackedInt32Array) -> void:
+	var side: int = b[sq]
+	b[sq] = 0
+	for t in flips:
+		b[t] = -side

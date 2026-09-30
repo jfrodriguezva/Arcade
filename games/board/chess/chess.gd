@@ -514,7 +514,11 @@ func _record_result(key: String) -> void:
 # --- IA (minimax con poda alfa-beta) ---
 
 func _piece_square_bonus(piece_type: String, x: int, y: int, owner: String) -> float:
-	var row: int = y if owner == "bot" else 7 - y
+	# Las tablas están escritas desde el lado del jugador (fila 0 = el
+	# extremo al que avanzan sus peones). Antes esto estaba al revés para
+	# ambos bandos: los peones "valían" más sin moverse y la IA evitaba
+	# avanzarlos.
+	var row: int = y if owner == "player" else 7 - y
 	match piece_type:
 		"P": return PAWN_TABLE[row][x]
 		"N": return KNIGHT_TABLE[row][x]
@@ -577,6 +581,19 @@ func _minimax_chess(b: Array, depth: int, alpha: float, beta: float, owner: Stri
 func _bot_move() -> void:
 	if game_over:
 		return
+	if difficulty == "hard":
+		status_label.text = "La máquina está pensando..."
+		await get_tree().process_frame
+		await get_tree().process_frame
+		if game_over:
+			return
+		var best: Dictionary = _engine_best_move()
+		if best.is_empty():
+			return
+		_apply_move(board, best["from"], best["to"])
+		_redraw_all()
+		_advance_turn("bot")
+		return
 
 	var depth: int = 2
 	match difficulty:
@@ -606,3 +623,383 @@ func _bot_move() -> void:
 	_apply_move(board, chosen["from"], chosen["to"])
 	_redraw_all()
 	_advance_turn("bot")
+
+
+# --- Motor de IA para Difícil ---------------------------------------------
+# Tablero compacto de 64 enteros (índice = y * 8 + x): 0 vacío; pieza de la
+# máquina positiva y del jugador negativa (1 peón, 2 caballo, 3 alfil,
+# 4 torre, 5 dama, 6 rey). La máquina avanza hacia y creciente. Se
+# hace/deshace sobre el mismo arreglo en vez de clonar diccionarios.
+#
+# Búsqueda: profundización iterativa con alfa-beta hasta agotar el tiempo,
+# quiescencia de capturas (no se detiene a media secuencia de cambios, que
+# era lo que hacía que la IA "ganara" un peón y perdiera la dama),
+# ordenamiento MVV-LVA y evaluación con tablas de posición para todas las
+# piezas y rey de medio juego/final.
+#
+# Jugada = entero: desde | hasta << 6 | banderas << 12 (4096 = corona a
+# dama, 8192 = enroque).
+
+const E_VALUES := [0, 100, 320, 330, 500, 900, 20000]
+const E_MATE := 1000000
+const E_TIME_MS := 1200
+const E_MAX_DEPTH := 12
+const E_KNIGHT := [Vector2i(1, 2), Vector2i(2, 1), Vector2i(2, -1), Vector2i(1, -2), Vector2i(-1, -2), Vector2i(-2, -1), Vector2i(-2, 1), Vector2i(-1, 2)]
+const E_KING := [Vector2i(1, 1), Vector2i(1, -1), Vector2i(-1, 1), Vector2i(-1, -1), Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]
+const E_DIAG := [Vector2i(1, 1), Vector2i(1, -1), Vector2i(-1, 1), Vector2i(-1, -1)]
+const E_ORTHO := [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]
+# Tablas desde el lado del jugador (fila 0 = extremo al que avanza).
+const E_PST := {
+	1: [0, 0, 0, 0, 0, 0, 0, 0, 50, 50, 50, 50, 50, 50, 50, 50, 10, 10, 20, 30, 30, 20, 10, 10, 5, 5, 10, 25, 25, 10, 5, 5, 0, 0, 0, 20, 20, 0, 0, 0, 5, -5, -10, 0, 0, -10, -5, 5, 5, 10, 10, -20, -20, 10, 10, 5, 0, 0, 0, 0, 0, 0, 0, 0],
+	2: [-50, -40, -30, -30, -30, -30, -40, -50, -40, -20, 0, 0, 0, 0, -20, -40, -30, 0, 10, 15, 15, 10, 0, -30, -30, 5, 15, 20, 20, 15, 5, -30, -30, 0, 15, 20, 20, 15, 0, -30, -30, 5, 10, 15, 15, 10, 5, -30, -40, -20, 0, 5, 5, 0, -20, -40, -50, -40, -30, -30, -30, -30, -40, -50],
+	3: [-20, -10, -10, -10, -10, -10, -10, -20, -10, 0, 0, 0, 0, 0, 0, -10, -10, 0, 5, 10, 10, 5, 0, -10, -10, 5, 5, 10, 10, 5, 5, -10, -10, 0, 10, 10, 10, 10, 0, -10, -10, 10, 10, 10, 10, 10, 10, -10, -10, 5, 0, 0, 0, 0, 5, -10, -20, -10, -10, -10, -10, -10, -10, -20],
+	4: [0, 0, 0, 0, 0, 0, 0, 0, 5, 10, 10, 10, 10, 10, 10, 5, -5, 0, 0, 0, 0, 0, 0, -5, -5, 0, 0, 0, 0, 0, 0, -5, -5, 0, 0, 0, 0, 0, 0, -5, -5, 0, 0, 0, 0, 0, 0, -5, -5, 0, 0, 0, 0, 0, 0, -5, 0, 0, 0, 5, 5, 0, 0, 0],
+	5: [-20, -10, -10, -5, -5, -10, -10, -20, -10, 0, 0, 0, 0, 0, 0, -10, -10, 0, 5, 5, 5, 5, 0, -10, -5, 0, 5, 5, 5, 5, 0, -5, 0, 0, 5, 5, 5, 5, 0, -5, -10, 5, 5, 5, 5, 5, 0, -10, -10, 0, 5, 0, 0, 0, 0, -10, -20, -10, -10, -5, -5, -10, -10, -20],
+	6: [-30, -40, -40, -50, -50, -40, -40, -30, -30, -40, -40, -50, -50, -40, -40, -30, -30, -40, -40, -50, -50, -40, -40, -30, -30, -40, -40, -50, -50, -40, -40, -30, -20, -30, -30, -40, -40, -30, -30, -20, -10, -20, -20, -20, -20, -20, -20, -10, 20, 20, 0, 0, 0, 0, 20, 20, 20, 30, 10, 0, 0, 10, 30, 20],
+}
+const E_KING_END := [-50, -40, -30, -20, -20, -30, -40, -50, -30, -20, -10, 0, 0, -10, -20, -30, -30, -10, 20, 30, 30, 20, -10, -30, -30, -10, 30, 40, 40, 30, -10, -30, -30, -10, 30, 40, 40, 30, -10, -30, -30, -10, 20, 30, 30, 20, -10, -30, -30, -30, 0, 0, 0, 0, -30, -30, -50, -30, -30, -30, -30, -30, -30, -50]
+const E_TYPE_CODE := {"P": 1, "N": 2, "B": 3, "R": 4, "Q": 5, "K": 6}
+
+var _e_rights: int = 0  # 1 máquina corto, 2 máquina largo, 4 jugador corto, 8 jugador largo
+var _e_king: Array = [0, 0]  # [casilla rey máquina, casilla rey jugador]
+var _e_deadline: int = 0
+var _e_nodes: int = 0
+var _e_aborted: bool = false
+
+
+func _engine_best_move() -> Dictionary:
+	var b := PackedInt32Array()
+	b.resize(64)
+	for y in range(SIZE):
+		for x in range(SIZE):
+			var c: Variant = board[y][x]
+			if c == null:
+				continue
+			var v: int = E_TYPE_CODE[c["type"]]
+			b[y * 8 + x] = v if c["owner"] == "bot" else -v
+			if c["type"] == "K":
+				_e_king[0 if c["owner"] == "bot" else 1] = y * 8 + x
+	_e_rights = 0
+	for info: Array in [["bot", 0, 1, 2], ["player", 7, 4, 8]]:
+		var k: Variant = board[info[1]][4]
+		if k == null or k["type"] != "K" or k["owner"] != info[0] or k["moved"]:
+			continue
+		var rk: Variant = board[info[1]][7]
+		if rk != null and rk["type"] == "R" and rk["owner"] == info[0] and not rk["moved"]:
+			_e_rights |= info[2]
+		var rq: Variant = board[info[1]][0]
+		if rq != null and rq["type"] == "R" and rq["owner"] == info[0] and not rq["moved"]:
+			_e_rights |= info[3]
+
+	var moves: Array = _e_legal(b, 1)
+	if moves.is_empty():
+		return {}
+	moves.shuffle()
+	_e_order(b, moves)
+	_e_deadline = Time.get_ticks_msec() + E_TIME_MS
+	_e_aborted = false
+	_e_nodes = 0
+	var best: int = moves[0]
+	for depth in range(1, E_MAX_DEPTH + 1):
+		var alpha: float = -INF
+		var depth_best: int = moves[0]
+		var scores: Dictionary = {}
+		for m: int in moves:
+			var undo: Array = _e_make(b, m)
+			var sc: float = -_e_search(b, depth - 1, -INF, -alpha, -1, 1)
+			_e_unmake(b, m, undo)
+			if _e_aborted:
+				break
+			scores[m] = sc
+			if sc > alpha:
+				alpha = sc
+				depth_best = m
+		if _e_aborted:
+			break
+		best = depth_best
+		if alpha >= E_MATE - 100:
+			break
+		moves.sort_custom(func(a: int, c: int) -> bool: return scores.get(a, -INF) > scores.get(c, -INF))
+	return {"from": Vector2i((best & 63) % 8, (best & 63) / 8), "to": Vector2i(((best >> 6) & 63) % 8, ((best >> 6) & 63) / 8)}
+
+
+func _e_search(b: PackedInt32Array, depth: int, alpha: float, beta: float, side: int, ply: int) -> float:
+	_e_nodes += 1
+	if (_e_nodes & 511) == 0 and Time.get_ticks_msec() > _e_deadline:
+		_e_aborted = true
+	if _e_aborted:
+		return 0.0
+	if depth <= 0:
+		return _e_quiesce(b, alpha, beta, side, 0)
+	var moves: Array = _e_legal(b, side)
+	if moves.is_empty():
+		return -(E_MATE - ply) if _e_attacked(b, _e_king[0 if side == 1 else 1], -side) else 0.0
+	_e_order(b, moves)
+	var best: float = -INF
+	for m: int in moves:
+		var undo: Array = _e_make(b, m)
+		var sc: float = -_e_search(b, depth - 1, -beta, -alpha, -side, ply + 1)
+		_e_unmake(b, m, undo)
+		if _e_aborted:
+			return 0.0
+		if sc > best:
+			best = sc
+		if sc > alpha:
+			alpha = sc
+		if alpha >= beta:
+			break
+	return best
+
+
+## Solo capturas, hasta que la posición quede "quieta".
+func _e_quiesce(b: PackedInt32Array, alpha: float, beta: float, side: int, qply: int) -> float:
+	var stand: float = side * _e_eval(b)
+	if stand >= beta or qply >= 6:
+		return stand
+	alpha = maxf(alpha, stand)
+	var caps: Array = _e_legal(b, side, true)
+	_e_order(b, caps)
+	for m: int in caps:
+		var undo: Array = _e_make(b, m)
+		var sc: float = -_e_quiesce(b, -beta, -alpha, -side, qply + 1)
+		_e_unmake(b, m, undo)
+		if sc >= beta:
+			return sc
+		alpha = maxf(alpha, sc)
+	return alpha
+
+
+## MVV-LVA: primero capturar la pieza más valiosa con la menos valiosa.
+func _e_order(b: PackedInt32Array, moves: Array) -> void:
+	moves.sort_custom(func(m1: int, m2: int) -> bool:
+		return _e_move_key(b, m1) > _e_move_key(b, m2))
+
+
+func _e_move_key(b: PackedInt32Array, m: int) -> int:
+	var cap: int = absi(b[(m >> 6) & 63])
+	var key: int = 0
+	if cap > 0:
+		key = 1000 + E_VALUES[cap] - absi(b[m & 63]) * 10
+	if (m >> 12) & 1:
+		key += 800
+	return key
+
+
+func _e_eval(b: PackedInt32Array) -> float:
+	var score := 0.0
+	var non_pawn := 0
+	var queens := 0
+	for sq in range(64):
+		var p: int = absi(b[sq])
+		if p >= 2 and p <= 5:
+			non_pawn += E_VALUES[p]
+		if p == 5:
+			queens += 1
+	var endgame: bool = queens == 0 or non_pawn <= 2600
+	for sq in range(64):
+		var v: int = b[sq]
+		if v == 0:
+			continue
+		var p: int = absi(v)
+		var x: int = sq % 8
+		var y: int = sq / 8
+		var idx: int = (y if v < 0 else 7 - y) * 8 + x
+		var pst: int = E_KING_END[idx] if (p == 6 and endgame) else E_PST[p][idx]
+		var s: float = E_VALUES[p] + pst
+		score += s if v > 0 else -s
+	return score
+
+
+func _e_legal(b: PackedInt32Array, side: int, captures_only: bool = false) -> Array:
+	var out: Array = []
+	for m: int in _e_pseudo(b, side, captures_only):
+		var undo: Array = _e_make(b, m)
+		if not _e_attacked(b, _e_king[0 if side == 1 else 1], -side):
+			out.append(m)
+		_e_unmake(b, m, undo)
+	return out
+
+
+func _e_pseudo(b: PackedInt32Array, side: int, captures_only: bool) -> Array:
+	var moves: Array = []
+	for sq in range(64):
+		var v: int = b[sq]
+		if v == 0 or signi(v) != side:
+			continue
+		var x: int = sq % 8
+		var y: int = sq / 8
+		match absi(v):
+			1:
+				var ny: int = y + side
+				var promo_row: int = 7 if side == 1 else 0
+				if ny >= 0 and ny < 8:
+					var fwd: int = ny * 8 + x
+					if b[fwd] == 0 and (not captures_only or ny == promo_row):
+						moves.append(sq | fwd << 6 | (4096 if ny == promo_row else 0))
+						var start_row: int = 1 if side == 1 else 6
+						if y == start_row and not captures_only and b[(y + 2 * side) * 8 + x] == 0:
+							moves.append(sq | ((y + 2 * side) * 8 + x) << 6)
+					for dx in [-1, 1]:
+						var nx: int = x + dx
+						if nx >= 0 and nx < 8:
+							var t: int = ny * 8 + nx
+							if b[t] != 0 and signi(b[t]) != side:
+								moves.append(sq | t << 6 | (4096 if ny == promo_row else 0))
+			2:
+				_e_steps(b, sq, side, E_KNIGHT, captures_only, moves)
+			3:
+				_e_slides(b, sq, side, E_DIAG, captures_only, moves)
+			4:
+				_e_slides(b, sq, side, E_ORTHO, captures_only, moves)
+			5:
+				_e_slides(b, sq, side, E_DIAG, captures_only, moves)
+				_e_slides(b, sq, side, E_ORTHO, captures_only, moves)
+			6:
+				_e_steps(b, sq, side, E_KING, captures_only, moves)
+				if not captures_only:
+					_e_castles(b, sq, side, moves)
+	return moves
+
+
+func _e_steps(b: PackedInt32Array, sq: int, side: int, offs: Array, captures_only: bool, moves: Array) -> void:
+	var x: int = sq % 8
+	var y: int = sq / 8
+	for o: Vector2i in offs:
+		var nx: int = x + o.x
+		var ny: int = y + o.y
+		if nx < 0 or nx > 7 or ny < 0 or ny > 7:
+			continue
+		var t: int = ny * 8 + nx
+		if b[t] == 0:
+			if not captures_only:
+				moves.append(sq | t << 6)
+		elif signi(b[t]) != side:
+			moves.append(sq | t << 6)
+
+
+func _e_slides(b: PackedInt32Array, sq: int, side: int, dirs: Array, captures_only: bool, moves: Array) -> void:
+	var x: int = sq % 8
+	var y: int = sq / 8
+	for d: Vector2i in dirs:
+		var nx: int = x + d.x
+		var ny: int = y + d.y
+		while nx >= 0 and nx < 8 and ny >= 0 and ny < 8:
+			var t: int = ny * 8 + nx
+			if b[t] == 0:
+				if not captures_only:
+					moves.append(sq | t << 6)
+			else:
+				if signi(b[t]) != side:
+					moves.append(sq | t << 6)
+				break
+			nx += d.x
+			ny += d.y
+
+
+func _e_castles(b: PackedInt32Array, sq: int, side: int, moves: Array) -> void:
+	var row: int = 0 if side == 1 else 7
+	if sq != row * 8 + 4 or _e_attacked(b, sq, -side):
+		return
+	var k_bit: int = 1 if side == 1 else 4
+	var q_bit: int = 2 if side == 1 else 8
+	if (_e_rights & k_bit) and b[row * 8 + 5] == 0 and b[row * 8 + 6] == 0 \
+			and not _e_attacked(b, row * 8 + 5, -side) and not _e_attacked(b, row * 8 + 6, -side):
+		moves.append(sq | (row * 8 + 6) << 6 | 8192)
+	if (_e_rights & q_bit) and b[row * 8 + 1] == 0 and b[row * 8 + 2] == 0 and b[row * 8 + 3] == 0 \
+			and not _e_attacked(b, row * 8 + 3, -side) and not _e_attacked(b, row * 8 + 2, -side):
+		moves.append(sq | (row * 8 + 2) << 6 | 8192)
+
+
+## ¿La casilla está atacada por el bando `by`?
+func _e_attacked(b: PackedInt32Array, sq: int, by: int) -> bool:
+	var x: int = sq % 8
+	var y: int = sq / 8
+	# Los peones de `by` atacan en diagonal hacia su avance.
+	var py: int = y - by
+	if py >= 0 and py < 8:
+		for dx in [-1, 1]:
+			var px: int = x + dx
+			if px >= 0 and px < 8 and b[py * 8 + px] == by:
+				return true
+	for o: Vector2i in E_KNIGHT:
+		var nx: int = x + o.x
+		var ny: int = y + o.y
+		if nx >= 0 and nx < 8 and ny >= 0 and ny < 8 and b[ny * 8 + nx] == 2 * by:
+			return true
+	for o: Vector2i in E_KING:
+		var nx: int = x + o.x
+		var ny: int = y + o.y
+		if nx >= 0 and nx < 8 and ny >= 0 and ny < 8 and b[ny * 8 + nx] == 6 * by:
+			return true
+	for d: Vector2i in E_DIAG:
+		var nx: int = x + d.x
+		var ny: int = y + d.y
+		while nx >= 0 and nx < 8 and ny >= 0 and ny < 8:
+			var v: int = b[ny * 8 + nx]
+			if v != 0:
+				if v == 3 * by or v == 5 * by:
+					return true
+				break
+			nx += d.x
+			ny += d.y
+	for d: Vector2i in E_ORTHO:
+		var nx: int = x + d.x
+		var ny: int = y + d.y
+		while nx >= 0 and nx < 8 and ny >= 0 and ny < 8:
+			var v: int = b[ny * 8 + nx]
+			if v != 0:
+				if v == 4 * by or v == 5 * by:
+					return true
+				break
+			nx += d.x
+			ny += d.y
+	return false
+
+
+func _e_make(b: PackedInt32Array, m: int) -> Array:
+	var from: int = m & 63
+	var to: int = (m >> 6) & 63
+	var v: int = b[from]
+	var side: int = signi(v)
+	var undo: Array = [b[to], _e_rights, _e_king[0], _e_king[1]]
+	b[to] = v
+	b[from] = 0
+	if (m >> 12) & 1:
+		b[to] = 5 * side
+	if (m >> 13) & 1:
+		var row: int = from / 8
+		if to % 8 == 6:
+			b[row * 8 + 5] = b[row * 8 + 7]
+			b[row * 8 + 7] = 0
+		else:
+			b[row * 8 + 3] = b[row * 8 + 0]
+			b[row * 8 + 0] = 0
+	if absi(v) == 6:
+		_e_king[0 if side == 1 else 1] = to
+		_e_rights &= ~(3 if side == 1 else 12)
+	# Mover o capturar una torre en su esquina quita ese enroque.
+	for info: Array in [[7, 1], [0, 2], [63, 4], [56, 8]]:
+		if from == info[0] or to == info[0]:
+			_e_rights &= ~int(info[1])
+	return undo
+
+
+func _e_unmake(b: PackedInt32Array, m: int, undo: Array) -> void:
+	var from: int = m & 63
+	var to: int = (m >> 6) & 63
+	var v: int = b[to]
+	if (m >> 12) & 1:
+		v = signi(v)  # vuelve a ser peón
+	b[from] = v
+	b[to] = undo[0]
+	if (m >> 13) & 1:
+		var row: int = from / 8
+		if to % 8 == 6:
+			b[row * 8 + 7] = b[row * 8 + 5]
+			b[row * 8 + 5] = 0
+		else:
+			b[row * 8 + 0] = b[row * 8 + 3]
+			b[row * 8 + 3] = 0
+	_e_rights = undo[1]
+	_e_king[0] = undo[2]
+	_e_king[1] = undo[3]
