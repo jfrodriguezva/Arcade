@@ -8,7 +8,7 @@ extends Control
 ## Formas soportadas: "ship", "asteroid", "alien", "paddle", "ball",
 ## "cowboy", "bandit", "bullet", "ghost", "muncher", "pellet",
 ## "snow_player", "snow_enemy", "snowball", "bomber", "bomb", "blast",
-## "cursor_drone", "sentry", "critter", "eyes", "ufo".
+## "cursor_drone", "sentry", "critter", "eyes", "ufo", "spider".
 
 var shape: String = "ball"
 var color: Color = Color.WHITE
@@ -77,6 +77,7 @@ func _draw() -> void:
 		"critter": _draw_critter(s)
 		"eyes": _draw_eyes(s)
 		"ufo": _draw_ufo(s)
+		"spider": _draw_spider(s)
 		_: _draw_ball(s)
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
@@ -476,3 +477,40 @@ func _draw_critter(s: Vector2) -> void:
 	draw_line(Vector2(w * 0.10, -h * 0.36), Vector2(w * 0.16, -h * 0.46), color2, 2.0)
 	draw_circle(Vector2(-w * 0.16, -h * 0.46), 2.0, color2)
 	draw_circle(Vector2(w * 0.16, -h * 0.46), 2.0, color2)
+
+
+# ------------------------------------------------------------ Panic Reveal -
+func _draw_spider(s: Vector2) -> void:
+	## Araña vista desde arriba: 8 patas articuladas que "caminan" con
+	## `phase` (pares alternados), abdomen con marca y ojos brillantes.
+	## Mira hacia arriba (facing 0), igual que el resto de sprites.
+	var r: float = min(s.x, s.y) * 0.5
+	var leg_col: Color = color.darkened(0.45)
+	var leg_w: float = max(1.6, r * 0.09)
+	var step: float = sin(phase * TAU * 3.0)
+	for side in [-1.0, 1.0]:
+		for i in 4:
+			var swing: float = step * (0.22 if i % 2 == 0 else -0.22) * side
+			var ang: float = deg_to_rad(-55.0 + i * 36.0) + swing
+			var hip := Vector2(side * r * 0.12, -r * 0.14 + i * r * 0.07)
+			var knee := hip + Vector2(side * cos(ang), sin(ang) - 0.55) * r * 0.48
+			var foot := knee + Vector2(side * cos(ang) * 0.7, sin(ang) + 0.65) * r * 0.42
+			draw_polyline(PackedVector2Array([hip, knee, foot]), leg_col, leg_w, true)
+	# abdomen
+	var abd_c := Vector2(0, r * 0.22)
+	draw_circle(abd_c, r * 0.36, color)
+	_outline(_circle_pts_at(abd_c, r * 0.36, 16), color.darkened(0.5), 1.4)
+	_poly(PackedVector2Array([
+		abd_c + Vector2(0, -r * 0.16), abd_c + Vector2(r * 0.08, 0),
+		abd_c + Vector2(0, r * 0.16), abd_c + Vector2(-r * 0.08, 0),
+	]), color2)
+	# cefalotórax y colmillos
+	var head_c := Vector2(0, -r * 0.24)
+	draw_circle(head_c, r * 0.22, color.lightened(0.12))
+	_outline(_circle_pts_at(head_c, r * 0.22, 12), color.darkened(0.5), 1.2)
+	draw_line(head_c + Vector2(-r * 0.07, -r * 0.18), head_c + Vector2(-r * 0.04, -r * 0.32), leg_col, leg_w * 0.9)
+	draw_line(head_c + Vector2(r * 0.07, -r * 0.18), head_c + Vector2(r * 0.04, -r * 0.32), leg_col, leg_w * 0.9)
+	for ex in [-0.08, 0.08]:
+		draw_circle(head_c + Vector2(r * ex, -r * 0.08), r * 0.055, color2)
+	for ex in [-0.15, 0.15]:
+		draw_circle(head_c + Vector2(r * ex, -r * 0.01), r * 0.04, color2)

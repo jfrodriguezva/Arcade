@@ -5,11 +5,10 @@ extends Control
 ## el paisaje procedural de abajo. Si un enemigo toca tu traza antes
 ## de cerrarla, pierdes una vida.
 ##
-## El "arte a revelar" es configurable por diseño (por ahora paisajes
-## procedurales: cielo con degradado, sol y montañas) en vez de fotos,
-## para que la mecánica sea reutilizable con cualquier tema de imagen.
-## El paisaje se dibuja con un shader (landscape.gdshader) a resolución
-## de pantalla completa, no celda por celda — por eso se ve nítido/HD y
+## El "arte a revelar" son paisajes naturales procedurales (uno por nivel:
+## lago alpino, playa, bosque, aurora, desierto, valle) en vez de fotos.
+## Se dibujan con un shader (landscape.gdshader) horneado a 2x la
+## resolución del tablero, no celda por celda — por eso se ven nítidos y
 ## sin cuadrícula. Lo "sin revelar" es otra capa (cover_mask.gdshader)
 ## que lee una máscara de 1 texel por celda lógica del tablero, pero
 ## muestreada con filtro bilineal para que el borde de revelado salga
@@ -21,7 +20,24 @@ const GAME_ID := "panic_reveal"
 const GRID_W := 20
 const GRID_H := 27
 const CELL := 34.0
-const DRAG_DEADZONE := 12.0  # tan cerca del marcador que no se distingue direccion
+## Radio alrededor del centro del marcador en el que el dedo cuenta como
+## "ya llegué, detente". Antes era 12px, MENOS que media celda (17px): con
+## el dedo a 13-17px del centro el marcador avanzaba una celda, quedaba ~20px
+## DETRÁS del dedo y se regresaba... sobre su propia traza. Con 0.75 celda,
+## tras un paso (recto 34px o diagonal 48px) el dedo siempre cae dentro del
+## radio y el marcador se queda quieto en vez de rebotar.
+const DRAG_DEADZONE := CELL * 0.75
+const NO_CELL := Vector2i(-1, -1)
+const LANDSCAPE_BAKE_SCALE := 2.0
+## Probabilidad por paso de que una araña cambie de rumbo sin haber chocado
+## (para que no vayan en línea recta de pared a pared), y de que el jefe
+## gire hacia tu marcador mientras estás trazando.
+const ENEMY_TURN_CHANCE := 0.12
+const BOSS_CHASE_CHANCE := 0.30
+const SPIDER_COLOR := Color(0.95, 0.42, 0.18)
+const SPIDER_COLOR2 := Color(1.0, 0.92, 0.35)
+const KILL_SCORE := 30
+const BOSS_KILL_SCORE := 500
 const MOVE_INTERVAL := 0.09
 const CAPTURE_TARGET := 80.0  # el arcade original pide 80%, no 75%
 const MAX_LEVEL := 10
@@ -51,32 +67,39 @@ const PANIC_MONSTER_THRESHOLD := 0.32
 const DIAGONAL_FACTOR := 1.41421356  # sqrt(2): un paso diagonal recorre más distancia real,
 	# así que tarda lo mismo por segundo (no "más rápido") que uno recto, igual que en el
 	# arcade original donde el marcador se mueve a velocidad constante en cualquier dirección.
+## La araña jefa crece, se oscurece y acelera con el tiempo del nivel. El
+## tamaño visual se queda por debajo de ~1.2 celdas: la colisión es por
+## celda, y un sprite mucho más grande que su celda "toca" tu traza a la
+## vista sin matarte (o parece matarte de lejos).
 const MONSTER_STAGES := [
-	{"shape": "alien", "color": UIKit.COLOR_DANGER, "color2": UIKit.COLOR_ACCENT_3, "scale": 0.88, "speed_mult": 1.0},
-	{"shape": "sentry", "color": Color(0.85, 0.20, 0.20), "color2": UIKit.COLOR_ACCENT_3, "scale": 1.05, "speed_mult": 1.35},
-	{"shape": "critter", "color": Color(0.55, 0.05, 0.10), "color2": Color(1.0, 0.6, 0.2), "scale": 1.3, "speed_mult": 1.8},
+	{"shape": "spider", "color": Color(0.62, 0.28, 0.85), "color2": Color(1.0, 0.35, 0.35), "scale": 1.0, "speed_mult": 1.0},
+	{"shape": "spider", "color": Color(0.80, 0.16, 0.30), "color2": Color(1.0, 0.75, 0.2), "scale": 1.1, "speed_mult": 1.3},
+	{"shape": "spider", "color": Color(0.30, 0.04, 0.10), "color2": Color(1.0, 0.15, 0.15), "scale": 1.2, "speed_mult": 1.65},
 ]
 
 const HELP_TEXT := "Toca y arrastra en cualquier parte del tablero: el marcador se mueve hacia donde esté tu dedo, en las 8 direcciones, igual que con el joystick del arcade original — todo el display es el control, no hay botones aparte.
 
-- Mientras estés en el borde o en zona ya capturada, estás a salvo... de los enemigos rojos. Desde el nivel 3 patrullan el borde exterior unos centinelas violeta (Sparx): si te tocan, aunque estés en zona 'segura', pierdes una vida igual.
-- Al entrar a la zona sin revelar, vas dejando una traza. Si un enemigo toca tu traza antes de que regreses al borde, pierdes una vida y la traza se borra — ojo, esto puede pasar contigo mismo si te acorralas.
-- Uno de los enemigos es el jefe: se vuelve más monstruoso y rápido mientras más tiempo pase en el nivel, y su zona nunca se puede capturar mientras siga vivo — rodéalo, no lo enfrentes de más.
-- Los demás enemigos SÍ mueren si quedan dentro de un área que capturas, sin importar qué tan grande sea esa área.
-- Al volver a tocar zona segura, el área que encerraste se revela como si se corriera una cortina y se captura. Entre más grande el área capturada de una vez, más puntos.
+- Mientras estés en el borde o en zona ya capturada, estás a salvo de las arañas. Desde el nivel 3 patrullan el borde exterior unos centinelas violeta (Sparx): si te tocan, aunque estés en zona 'segura', pierdes una vida igual.
+- Al entrar a la zona sin revelar, vas dejando una traza. Si una araña toca tu traza antes de que regreses al borde, pierdes una vida y la traza se borra. Tu propia traza no te mata: el marcador simplemente no puede pasar sobre ella.
+- Al cerrar la traza se captura siempre el lado MÁS CHICO; el lado más grande queda abierto. Toda araña que quede en la parte capturada muere — incluida la araña jefa (morada, crece y acelera con el tiempo): enciérrala en un rincón y vale muchos puntos.
+- El área encerrada se revela como si se corriera una cortina. Entre más grande el área capturada de una vez, más puntos.
 - Arriba hay una barra chica/monstruo: revelar la silueta la empuja hacia monstruo, revelar el fondo (todo lo que no es la silueta) la regresa, y se va sola hacia monstruo con el tiempo. Si llegas al 80% con la barra del lado monstruo, el nivel NO se completa todavía — sigue revelando fondo hasta recuperarla.
-- Cada nivel esconde una ☄️ tormenta de asteroides bajo alguna celda de fondo. Al revelarla, destruye a todos los enemigos chicos en pantalla (el jefe es inmune).
+- Cada nivel esconde una ☄️ tormenta de asteroides bajo alguna celda de fondo. Al revelarla, destruye a todas las arañas chicas en pantalla (la jefa es inmune).
+- Cada nivel es un paisaje natural distinto: lago alpino, playa tropical, bosque con niebla, aurora boreal, cañón desértico y valle con arcoíris.
 - Hay un límite de tiempo por nivel (arriba a la derecha). Si se agota, pierdes una vida y se reinicia el reloj.
 
 Captura el 80% del área (con la barra del lado chica) para pasar de nivel. Hay 10 niveles, cada uno con más enemigos, más rápidos y menos tiempo. Pierdes si se acaban tus 3 vidas."
 
 var grid_state: Array = []
-## El paisaje ya no se pinta celda por celda: landscape_bg lo dibuja con un
-## shader a resolución de pantalla completa (nítido, sin cuadrícula), y
+## El paisaje ya no se pinta celda por celda: landscape_painter lo hornea con
+## un shader en landscape_viewport una vez por nivel, landscape_bg muestra
+## esa textura (con el tinte de "modo monstruo" encima), y
 ## cover_layer pinta el "opaco" encima usando mask_image/mask_texture (un
 ## texel por celda lógica, muestreado con filtro bilineal + smoothstep en
 ## el shader para que el borde de revelado se vea suave, no en escalones).
-var landscape_bg: ColorRect
+var landscape_viewport: SubViewport
+var landscape_painter: ColorRect
+var landscape_bg: TextureRect
 var cover_layer: ColorRect
 var mask_image: Image
 var mask_texture: ImageTexture
@@ -268,11 +291,29 @@ func _build_ui() -> void:
 
 	var board_size := Vector2(GRID_W * CELL, GRID_H * CELL)
 
-	landscape_bg = ColorRect.new()
+	# El paisaje (landscape.gdshader) es caro -- fbm y varias capas -- así que
+	# se hornea UNA vez por nivel en un SubViewport a 2x (nítido en pantallas
+	# densas) y el tablero solo muestra esa textura; ver _setup_level().
+	landscape_viewport = SubViewport.new()
+	landscape_viewport.size = Vector2i(board_size * LANDSCAPE_BAKE_SCALE)
+	landscape_viewport.disable_3d = true
+	landscape_viewport.render_target_update_mode = SubViewport.UPDATE_DISABLED
+	play_area.add_child(landscape_viewport)
+	landscape_painter = ColorRect.new()
+	landscape_painter.size = board_size * LANDSCAPE_BAKE_SCALE
+	landscape_painter.material = ShaderMaterial.new()
+	landscape_painter.material.shader = load("res://games/arcade/panic_reveal/landscape.gdshader")
+	landscape_painter.material.set_shader_parameter("aspect", float(GRID_W) / float(GRID_H))
+	landscape_viewport.add_child(landscape_painter)
+
+	landscape_bg = TextureRect.new()
 	landscape_bg.size = board_size
+	landscape_bg.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	landscape_bg.stretch_mode = TextureRect.STRETCH_SCALE
+	landscape_bg.texture = landscape_viewport.get_texture()
 	landscape_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	landscape_bg.material = ShaderMaterial.new()
-	landscape_bg.material.shader = load("res://games/arcade/panic_reveal/landscape.gdshader")
+	landscape_bg.material.shader = load("res://games/arcade/panic_reveal/panic_tint.gdshader")
 	play_area.add_child(landscape_bg)
 
 	mask_image = Image.create(GRID_W, GRID_H, false, Image.FORMAT_R8)
@@ -418,7 +459,8 @@ func _setup_level() -> void:
 			var is_border: bool = x == 0 or y == 0 or x == GRID_W - 1 or y == GRID_H - 1
 			row.append("captured" if is_border else "open")
 		grid_state.append(row)
-	landscape_bg.material.set_shader_parameter("level", float(level))
+	landscape_painter.material.set_shader_parameter("level", float(level))
+	landscape_viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
 	_rebuild_mask()
 	_build_subject_mask()
 	panic_gauge = PANIC_START
@@ -433,7 +475,7 @@ func _setup_level() -> void:
 	move_timer = 0.0
 	player_prev_pos = Vector2.ZERO
 	player_target_pos = Vector2.ZERO
-	player_view.position = Vector2.ZERO
+	player_view.position = _view_pos(Vector2.ZERO, player_view)
 	trail.clear()
 	trail_line.points = PackedVector2Array()
 	_build_perimeter()
@@ -442,28 +484,37 @@ func _setup_level() -> void:
 	for e: Dictionary in enemies:
 		e["view"].queue_free()
 	enemies.clear()
+	# Arañas: la primera es la jefa (morada, crece con el tiempo), las demás
+	# son arañas chicas naranjas. Nacen lejos de la esquina de salida del
+	# jugador para que el arranque del nivel no sea una muerte regalada.
 	var enemy_count: int = min(1 + level / 2, 6)
 	var enemy_interval: float = max(0.10, 0.30 - level * 0.018)
 	for i in range(enemy_count):
 		var pos := Vector2i(1 + randi() % (GRID_W - 2), 1 + randi() % (GRID_H - 2))
+		while pos.x + pos.y < 8:
+			pos = Vector2i(1 + randi() % (GRID_W - 2), 1 + randi() % (GRID_H - 2))
 		var view := EntitySprite.new()
-		view.size = Vector2(CELL * 0.88, CELL * 0.88)
-		view.position = Vector2(pos.x * CELL, pos.y * CELL)
 		view.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		view.setup("alien", UIKit.COLOR_DANGER, UIKit.COLOR_ACCENT_3, i)
+		view.size = Vector2(CELL * 0.92, CELL * 0.92)
+		view.pivot_offset = view.size / 2.0
+		view.setup("spider", SPIDER_COLOR, SPIDER_COLOR2, i)
 		play_area.add_child(view)
-		var start_dir: Vector2i = _random_dir()
+		var start_dir: Vector2i = OCTANTS[randi() % OCTANTS.size()]
 		view.set_facing(_dir_to_deg(start_dir))
 		var pix: Vector2 = Vector2(pos) * CELL
-		enemies.append({
+		view.position = _view_pos(pix, view)
+		var e := {
 			"kind": "qix", "pos": pos, "dir": start_dir, "view": view,
 			"interval": enemy_interval, "timer": 0.0, "phase": randf(),
 			"prev_pixel": pix, "target_pixel": pix,
-			# Solo el primer "qix" del nivel se vuelve un monstruo con el
-			# tiempo — que todos escalen a la vez sería demasiado, y en el
+			# Solo la primera araña del nivel se vuelve monstruo con el
+			# tiempo — que todas escalen a la vez sería demasiado, y en el
 			# arcade original es un único enemigo el que se transforma.
 			"is_lead": i == 0, "monster_stage": 0, "base_interval": enemy_interval,
-		})
+		}
+		if i == 0:
+			_evolve_monster(e, 0)
+		enemies.append(e)
 
 	# Sparx: centinelas que patrullan el borde exterior desde el nivel 3 —
 	# son peligrosos aunque el jugador esté en zona "segura", igual que en
@@ -481,11 +532,11 @@ func _setup_level() -> void:
 		var pos: Vector2i = perimeter_cells[s0]
 		var view := EntitySprite.new()
 		view.size = Vector2(CELL * 0.78, CELL * 0.78)
-		view.position = Vector2(pos.x * CELL, pos.y * CELL)
 		view.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		view.setup("sentry", Color(0.678, 0.478, 0.925), UIKit.COLOR_TEXT, i)
 		play_area.add_child(view)
 		var spix: Vector2 = Vector2(pos) * CELL
+		view.position = _view_pos(spix, view)
 		enemies.append({
 			"kind": "sparx", "s": s0, "step": 1 if i % 2 == 0 else -1,
 			"pos": pos, "view": view, "interval": 1.0 / SPARX_SPEED, "timer": 0.0, "phase": randf(),
@@ -521,10 +572,20 @@ func _update_monster_evolution() -> void:
 func _evolve_monster(e: Dictionary, stage: int) -> void:
 	e["monster_stage"] = stage
 	var s: Dictionary = MONSTER_STAGES[stage]
-	var sz: float = CELL * 0.88 * float(s["scale"])
-	e["view"].size = Vector2(sz, sz)
-	e["view"].setup(s["shape"], s["color"], s["color2"], e["view"].seed_i)
+	var sz: float = CELL * 1.0 * float(s["scale"])
+	var view: EntitySprite = e["view"]
+	view.size = Vector2(sz, sz)
+	view.pivot_offset = view.size / 2.0
+	view.setup(s["shape"], s["color"], s["color2"], view.seed_i)
 	e["interval"] = float(e["base_interval"]) / float(s["speed_mult"])
+
+
+## Posición (esquina superior izquierda) de un sprite para que quede
+## CENTRADO en la celda cuya esquina es `cell_pixel`. Antes los sprites se
+## anclaban a la esquina de la celda, así que los más grandes que la celda
+## (la jefa) se salían hacia abajo/derecha y los choques se veían corridos.
+func _view_pos(cell_pixel: Vector2, view: Control) -> Vector2:
+	return cell_pixel + (Vector2(CELL, CELL) - view.size) / 2.0
 
 
 func _build_perimeter() -> void:
@@ -539,10 +600,6 @@ func _build_perimeter() -> void:
 		perimeter_cells.append(Vector2i(x, GRID_H - 1))
 	for y in range(GRID_H - 2, 0, -1):
 		perimeter_cells.append(Vector2i(0, y))
-
-
-func _random_dir() -> Vector2i:
-	return DIRS[randi() % DIRS.size()]
 
 
 func _update_hud() -> void:
@@ -618,8 +675,7 @@ func _trigger_asteroid_storm() -> void:
 	for e: Dictionary in enemies.duplicate():
 		if e["kind"] != "qix" or e.get("is_lead", false):
 			continue
-		enemies.erase(e)
-		e["view"].queue_free()
+		_kill_enemy(e)
 		score += 40
 	_update_hud()
 	AudioManager.play_power()
@@ -688,7 +744,7 @@ func _process(delta: float) -> void:
 		player_target_pos = Vector2(player_cell) * CELL
 	if state == "playing":
 		var pt: float = clamp(move_timer / tick_interval, 0.0, 1.0)
-		player_view.position = player_prev_pos.lerp(player_target_pos, pt)
+		player_view.position = _view_pos(player_prev_pos.lerp(player_target_pos, pt), player_view)
 
 	# El marcador gira más rápido mientras traza una línea activa (peligro),
 	# y despacio cuando está a salvo en el borde o en zona ya capturada.
@@ -708,35 +764,48 @@ func _process(delta: float) -> void:
 				_move_enemy(e)
 			e["target_pixel"] = Vector2(e["pos"]) * CELL
 		var et: float = clamp(e["timer"] / e["interval"], 0.0, 1.0)
-		e["view"].position = e["prev_pixel"].lerp(e["target_pixel"], et)
+		e["view"].position = _view_pos(e["prev_pixel"].lerp(e["target_pixel"], et), e["view"])
 		e["phase"] = fposmod(e["phase"] + delta * ENEMY_FLAP_SPEED, 1.0)
 		e["view"].set_phase(e["phase"])
 
 	_check_enemy_collisions()
 
 
+## 0 = arriba, 90 = derecha... también para las 4 diagonales.
 func _dir_to_deg(d: Vector2i) -> float:
-	if d == Vector2i(0, -1):
+	if d == Vector2i.ZERO:
 		return 0.0
-	if d == Vector2i(1, 0):
-		return 90.0
-	if d == Vector2i(0, 1):
-		return 180.0
-	if d == Vector2i(-1, 0):
-		return 270.0
-	return 0.0
+	return rad_to_deg(atan2(float(d.x), float(-d.y)))
+
+
+func _in_grid(c: Vector2i) -> bool:
+	return c.x >= 0 and c.x < GRID_W and c.y >= 0 and c.y < GRID_H
+
+
+func _cell_is(c: Vector2i, what: String) -> bool:
+	return _in_grid(c) and grid_state[c.y][c.x] == what
 
 
 func _try_move_player() -> void:
 	var next: Vector2i = player_cell + current_dir
-	if next.x < 0 or next.x >= GRID_W or next.y < 0 or next.y >= GRID_H:
+	if not _in_grid(next):
 		return
 
 	var next_state: String = grid_state[next.y][next.x]
 
+	# Tu propia traza es una pared, no una muerte: como en el original, el
+	# marcador simplemente no puede regresarse sobre su línea. Antes esto
+	# costaba una vida, y era justo lo que "fallaba" al trazar: el dedo
+	# temblaba o el marcador rebasaba al dedo, el siguiente paso apuntaba a
+	# la celda de la que venías y morías sin que ninguna araña te tocara.
 	if next_state == "trail":
-		_lose_life()
 		return
+	# Tampoco se vale cruzar tu traza en diagonal "por la esquina" (pasar
+	# entre dos celdas de traza que se tocan en diagonal): partiría el trazo
+	# en dos y la captura saldría rara.
+	if current_dir.x != 0 and current_dir.y != 0:
+		if _cell_is(player_cell + Vector2i(current_dir.x, 0), "trail") and _cell_is(player_cell + Vector2i(0, current_dir.y), "trail"):
+			return
 
 	if next_state == "captured":
 		player_cell = next
@@ -745,7 +814,7 @@ func _try_move_player() -> void:
 		return
 
 	for e: Dictionary in enemies:
-		if e["pos"] == next:
+		if e["kind"] == "qix" and e["pos"] == next:
 			_lose_life()
 			return
 
@@ -757,27 +826,31 @@ func _try_move_player() -> void:
 
 
 func _complete_capture() -> void:
-	# Solo el jefe (is_lead) excluye su bolsa de la captura, como el Qix
-	# clásico -- hay que rodearlo, nunca se le puede matar encerrándolo. Los
-	# demás enemigos NO bloquean nada: si su celda queda capturada, mueren
-	# ahí mismo, sin importar qué tan grande sea el área (ver
-	# _kill_enemies_in_cells más abajo) -- así es el original, no como el
-	# Qix clásico donde cualquier enemigo dentro excluye su zona.
-	var reachable: Dictionary = {}
-	for e: Dictionary in enemies:
-		if e["kind"] == "qix" and e.get("is_lead", false):
-			_flood_fill_from(e["pos"], reachable)
-
+	# Regla de captura: al cerrar, la traza parte lo abierto en regiones; se
+	# queda abierta SOLO la más grande y todas las demás se capturan. Toda
+	# araña que quede en lo capturado muere -- incluida la jefa (ver
+	# _kill_enemies_in_cells). Antes la región de la jefa nunca se
+	# capturaba: si la encerrabas en un rincón chico, el juego se llevaba el
+	# lado GRANDE (el que no querías) y la jefa seguía viva -- de ahí que
+	# "no se podían matar las arañas".
 	var newly_cells: Array = []
-	for y in range(GRID_H):
-		for x in range(GRID_W):
-			var key := Vector2i(x, y)
-			if grid_state[y][x] == "trail":
-				grid_state[y][x] = "captured"
-				newly_cells.append(key)
-			elif grid_state[y][x] == "open" and not reachable.has(key):
-				grid_state[y][x] = "captured"
-				newly_cells.append(key)
+	for c: Vector2i in trail:
+		grid_state[c.y][c.x] = "captured"
+		newly_cells.append(c)
+
+	var regions: Array = _open_regions()
+	var keep: int = -1
+	var boss_region: int = _region_of_boss(regions)
+	for i in range(regions.size()):
+		if keep == -1 or regions[i].size() > regions[keep].size() \
+				or (regions[i].size() == regions[keep].size() and i == boss_region):
+			keep = i
+	for i in range(regions.size()):
+		if i == keep:
+			continue
+		for c: Vector2i in regions[i]:
+			grid_state[c.y][c.x] = "captured"
+			newly_cells.append(c)
 
 	trail.clear()
 	trail_line.points = PackedVector2Array()
@@ -821,64 +894,141 @@ func _complete_capture() -> void:
 	_advance_level()
 
 
-func _flood_fill_from(start: Vector2i, reachable: Dictionary) -> void:
-	if grid_state[start.y][start.x] != "open":
-		return
-	var stack: Array = [start]
-	reachable[start] = true
-	while not stack.is_empty():
-		var cur: Vector2i = stack.pop_back()
-		for d: Vector2i in DIRS:
-			var n: Vector2i = cur + d
-			if n.x < 0 or n.x >= GRID_W or n.y < 0 or n.y >= GRID_H:
+## Componentes conexas (4 vecinos) de celdas "open". Con traza diagonal esto
+## sigue siendo correcto: dos celdas abiertas a lados opuestos de una línea
+## diagonal solo se tocan en diagonal, así que no se "fugan" entre sí.
+func _open_regions() -> Array:
+	var seen: Dictionary = {}
+	var regions: Array = []
+	for y in range(GRID_H):
+		for x in range(GRID_W):
+			var start := Vector2i(x, y)
+			if grid_state[y][x] != "open" or seen.has(start):
 				continue
-			if reachable.has(n):
-				continue
-			if grid_state[n.y][n.x] != "open":
-				continue
-			reachable[n] = true
-			stack.append(n)
+			var region: Array = [start]
+			seen[start] = true
+			var stack: Array = [start]
+			while not stack.is_empty():
+				var cur: Vector2i = stack.pop_back()
+				for d: Vector2i in DIRS:
+					var n: Vector2i = cur + d
+					if not _cell_is(n, "open") or seen.has(n):
+						continue
+					seen[n] = true
+					region.append(n)
+					stack.append(n)
+			regions.append(region)
+	return regions
+
+
+func _region_of_boss(regions: Array) -> int:
+	for e: Dictionary in enemies:
+		if e["kind"] == "qix" and e.get("is_lead", false):
+			for i in range(regions.size()):
+				if regions[i].has(e["pos"]):
+					return i
+	return -1
 
 
 func _kill_enemies_in_cells(cells: Array) -> void:
-	## Como en el arcade original: cualquier enemigo (menos el jefe) que
-	## quede dentro del área que se acaba de capturar muere ahí mismo -- sin
-	## importar el tamaño del área. No se divide: esa mecánica la inventé
-	## mal en un pase anterior, no es del juego real.
+	## Toda araña que quede dentro del área recién capturada muere ahí
+	## mismo, sin importar el tamaño del área -- la jefa también (vale
+	## BOSS_KILL_SCORE). Los Sparx viven en el borde exterior y no cuentan.
 	if cells.is_empty():
 		return
 	var captured_now: Dictionary = {}
 	for c: Vector2i in cells:
 		captured_now[c] = true
 	var killed_any := false
+	var killed_boss := false
 	for e: Dictionary in enemies.duplicate():
-		if e["kind"] != "qix" or e.get("is_lead", false):
+		if e["kind"] != "qix" or not captured_now.has(e["pos"]):
 			continue
-		if captured_now.has(e["pos"]):
-			enemies.erase(e)
-			e["view"].queue_free()
-			score += 30
-			killed_any = true
-	if killed_any:
+		if e.get("is_lead", false):
+			killed_boss = true
+			score += BOSS_KILL_SCORE
+		else:
+			score += KILL_SCORE
+		_kill_enemy(e)
+		killed_any = true
+	if killed_boss:
+		var msg: String = "¡Araña jefa eliminada! +%d" % BOSS_KILL_SCORE
+		status_label.text = msg
+		AudioManager.play_power()
+		get_tree().create_timer(2.0).timeout.connect(func() -> void:
+			if status_label.text == msg:
+				status_label.text = "Nivel %d/%d" % [level, MAX_LEVEL])
+	elif killed_any:
 		AudioManager.play_click()
 	_update_hud()
 
 
+## Quita al enemigo de la lógica de inmediato y le da una animación corta de
+## "aplastado" (crece y se desvanece) antes de liberar el nodo, para que se
+## note que murió en vez de desaparecer de golpe.
+func _kill_enemy(e: Dictionary) -> void:
+	enemies.erase(e)
+	var view: EntitySprite = e["view"]
+	view.pivot_offset = view.size / 2.0
+	var tw := view.create_tween().set_parallel(true)
+	tw.tween_property(view, "scale", Vector2(1.7, 1.7), 0.35)
+	tw.tween_property(view, "modulate", Color(1.0, 1.0, 1.0, 0.0), 0.35)
+	tw.chain().tween_callback(view.queue_free)
+
+
+## Las arañas caminan en 8 direcciones, cambian de rumbo de vez en cuando
+## (no solo al chocar) y rebotan en lo capturado. La jefa, mientras estás
+## trazando, a veces gira hacia tu marcador.
 func _move_enemy(e: Dictionary) -> void:
-	var next: Vector2i = e["pos"] + e["dir"]
-	if not _enemy_can_enter(next):
-		e["dir"] = _random_dir()
-		next = e["pos"] + e["dir"]
-		if not _enemy_can_enter(next):
-			return
+	var dir: Vector2i = e["dir"]
+	if e.get("is_lead", false) and not trail.is_empty() and randf() < BOSS_CHASE_CHANCE:
+		var to_player: Vector2i = player_cell - e["pos"]
+		dir = Vector2i(signi(to_player.x), signi(to_player.y))
+	elif randf() < ENEMY_TURN_CHANCE:
+		dir = OCTANTS[randi() % OCTANTS.size()]
+	var next: Vector2i = _enemy_step(e["pos"], dir)
+	var tries := 0
+	while next == NO_CELL and tries < 8:
+		dir = OCTANTS[randi() % OCTANTS.size()]
+		next = _enemy_step(e["pos"], dir)
+		tries += 1
+	if next == NO_CELL:
+		return
+	e["dir"] = dir
 	e["pos"] = next
-	e["view"].set_facing(_dir_to_deg(e["dir"]))
+	e["view"].set_facing(_dir_to_deg(dir))
+
+
+## Celda a la que llega una araña que avanza en `d`, o NO_CELL si ahí hay
+## pared (borde o zona capturada). Las arañas SÍ pueden pisar tu traza --
+## eso es justo lo que te mata (ver _check_enemy_collisions); antes solo
+## podían entrar a celdas "open", así que rebotaban en la traza como si
+## fuera pared y casi nunca te alcanzaban. Un paso diagonal que pasa "por la
+## esquina" de tu traza cuenta como tocarla: cae sobre esa celda de traza.
+func _enemy_step(from: Vector2i, d: Vector2i) -> Vector2i:
+	if d == Vector2i.ZERO:
+		return NO_CELL
+	var to: Vector2i = from + d
+	if not _enemy_can_enter(to):
+		return NO_CELL
+	if d.x != 0 and d.y != 0:
+		var a: Vector2i = from + Vector2i(d.x, 0)
+		var b: Vector2i = from + Vector2i(0, d.y)
+		if _cell_is(a, "trail"):
+			return a
+		if _cell_is(b, "trail"):
+			return b
+		# No se cuela en diagonal entre dos paredes que se tocan en esquina.
+		if not _enemy_can_enter(a) and not _enemy_can_enter(b):
+			return NO_CELL
+	return to
 
 
 func _enemy_can_enter(p: Vector2i) -> bool:
 	if p.x <= 0 or p.x >= GRID_W - 1 or p.y <= 0 or p.y >= GRID_H - 1:
 		return false
-	return grid_state[p.y][p.x] == "open"
+	var s: String = grid_state[p.y][p.x]
+	return s == "open" or s == "trail"
 
 
 func _move_sparx(e: Dictionary) -> void:
@@ -922,7 +1072,7 @@ func _lose_life() -> void:
 	# de partida como el de llegada de la interpolación quedan en el origen.
 	player_prev_pos = Vector2.ZERO
 	player_target_pos = Vector2.ZERO
-	player_view.position = Vector2.ZERO
+	player_view.position = _view_pos(Vector2.ZERO, player_view)
 	trail_line.points = PackedVector2Array()
 	_update_hud()
 
