@@ -10,6 +10,11 @@ extends Node
 ## de emoji a color va primero (para que 🎲 salga a color) y las de
 ## símbolos monocromo después, para lo que el emoji no cubre (flechas,
 ## piezas de ajedrez, fichas de dominó/mahjong).
+##
+## OJO: las fuentes de fonts/ están RECORTADAS a los caracteres que usa el
+## proyecto (las completas pesaban ~12 MB, la mitad del juego web). Si
+## agregas un emoji o símbolo nuevo, corre `py tools/subset_fonts.py` antes
+## de exportar o se verá en blanco en la versión web.
 const FALLBACK_PATHS := [
 	"res://fonts/NotoColorEmoji.ttf",
 	"res://fonts/NotoSansSymbols.ttf",
