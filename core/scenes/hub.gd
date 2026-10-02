@@ -66,6 +66,8 @@ func _ready() -> void:
 	if _hub_data().get("recent", []).is_empty() and _hub_data().get("favorites", []).is_empty():
 		current_tab = "mesa"  # primera vez: no hay nada que mostrar en Inicio
 	_select_tab(current_tab)
+	if GameManager.pending_ecos != "":
+		GameManager.go_to_game.call_deferred("ecos")  # abrieron un enlace de Ecos
 
 
 func _hub_data() -> Dictionary:

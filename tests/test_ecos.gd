@@ -15,6 +15,17 @@ const SOL := [
 	[[Vector2i(3, 1), Vector2i(3, 2), "end"], [Vector2i(9, 1), "end"], [1.5, Vector2i(1, 5), Vector2i(4, 5), Vector2i(4, 7)]],
 	[[Vector2i(1, 1), "end"], [Vector2i(9, 1), "end"], [Vector2i(5, 2), "end"], [Vector2i(5, 8)]],
 	[[Vector2i(1, 1), "end"], [Vector2i(9, 1), "end"], [Vector2i(1, 2), Vector2i(1, 4), Vector2i(4, 4), "t3.05", Vector2i(5, 4), "end"], [Vector2i(5, 2), Vector2i(9, 2), Vector2i(9, 4), Vector2i(6, 4), "t3.6", Vector2i(5, 4), Vector2i(5, 9)]],
+	# 11-20
+	[[Vector2i(1, 1), "end"], [Vector2i(9, 1), "end"], [3.0, Vector2i(5, 8)]],
+	[[Vector2i(1, 4), Vector2i(4, 4), "t3.05", Vector2i(5, 4), Vector2i(5, 5), "end"], [Vector2i(1, 4), Vector2i(4, 4), "t3.05", Vector2i(5, 4), Vector2i(5, 9)]],
+	[[Vector2i(1, 4), "t3.0", Vector2i(1, 5), "end"], [Vector2i(9, 1), Vector2i(9, 4), "t3.0", Vector2i(9, 5), "end"], [Vector2i(1, 4), "t3.4", Vector2i(1, 5), Vector2i(5, 5), Vector2i(5, 7)]],
+	[[Vector2i(5, 1), "end"], [Vector2i(5, 1), "end"], [4.0, Vector2i(1, 2), Vector2i(5, 2), Vector2i(5, 4), Vector2i(9, 4), Vector2i(9, 8)]],
+	[[Vector2i(9, 1), "end"], [Vector2i(9, 1), "end"], [3.0, Vector2i(1, 4), Vector2i(5, 4), Vector2i(5, 6)]],
+	[[Vector2i(9, 1), "end"], [Vector2i(5, 4), Vector2i(1, 4), "end"], [Vector2i(5, 4), Vector2i(9, 4), "end"], [Vector2i(5, 9)]],
+	[[Vector2i(1, 5), Vector2i(4, 5), "t3.05", Vector2i(5, 5), "end"], [Vector2i(1, 5), Vector2i(4, 5), "t3.2", Vector2i(5, 5), Vector2i(5, 9)]],
+	[[Vector2i(9, 1), "end"], [Vector2i(1, 4), "t3.0", Vector2i(1, 5), "end"], [Vector2i(1, 2), Vector2i(9, 2), Vector2i(9, 4), "t3.0", Vector2i(9, 5), "end"], [Vector2i(1, 4), "t3.4", Vector2i(1, 5), Vector2i(5, 5), Vector2i(5, 8)]],
+	[[0.2, "end"], [0.2, "end"], [3.5, Vector2i(1, 5), "end"], [5.0, Vector2i(1, 4), Vector2i(9, 4), Vector2i(9, 7)]],
+	[[0.2, "end"], [2.5, Vector2i(8, 1), Vector2i(8, 2), "end"], [2.5, Vector2i(1, 5), Vector2i(4, 5), "t6.05", Vector2i(5, 5), "end"], [2.5, Vector2i(1, 5), Vector2i(4, 5), "t6.2", Vector2i(5, 5), Vector2i(5, 9)]],
 ]
 
 
@@ -58,13 +69,54 @@ static func play_attempt(g: Node, steps: Array) -> String:
 
 func run() -> void:
 	var g: Node = await open("res://games/arcade/ecos/ecos.tscn")
+	var g2: Node = await open("res://games/arcade/ecos/ecos.tscn")
 	for lv in range(SOL.size()):
 		g.level_idx = lv
 		g._load_level()
 		var log: Array = []
 		for att: Array in SOL[lv]:
 			var r: String = play_attempt(g, att)
-			log.append(r)
+			log.append(r if r != "failed" else "failed: " + g.flash)
 			if r == "failed":
 				await wait(1.2)
 		check(g.state in ["won", "replay"], "nivel %d (%s) resuelto con %d eco(s): %s" % [lv + 1, g.LEVELS[lv]["name"], g.ecos.size(), log])
+		# El enlace para compartir reproduce la misma solución en otro juego.
+		var info: Dictionary = g.decode_solution(g.solution_code)
+		var ok: bool = not info.is_empty() and info["level"] == lv and g2.simulate_solution(info)
+		check(ok and g2.ecos.size() == g.ecos.size(), "   y su enlace (%d letras) se vuelve a jugar igual" % g.solution_code.length())
+	check(g.decode_solution("hola!").is_empty() and g.decode_solution("AAAA").is_empty(), "un enlace roto no abre nada")
+	var days := {}
+	for d in ["2026-10-02", "2026-10-03", "2026-10-04", "2026-12-31", "2027-01-01"]:
+		var lvd: int = g.daily_level(d)
+		days[lvd] = true
+		if lvd < 2 or lvd >= g.LEVELS.size():
+			days = {}
+			break
+	check(days.size() >= 3 and g.daily_level("2026-10-02") == g.daily_level("2026-10-02"), "reto del día: cambia por fecha y siempre da un nivel válido")
+	check(g._day_before("2026-03-01") == "2026-02-28" and g._day_before("2027-01-01") == "2026-12-31", "reto del día: la racha cuenta bien el día anterior")
+
+	# Racha: ayer jugado -> hoy suma uno.
+	var stats: Dictionary = tree.root.get_node("SaveManager").get_game_data("ecos")
+	stats["streak"] = 4
+	stats["streak_last"] = g._day_before(g._today())
+	g._start_daily()
+	check(g.mode == "daily" and g.level_idx == g.daily_level(g._today()), "reto del día: abre el nivel de hoy")
+	g._record_daily(stats, 2, 7.5)
+	check(int(stats["streak"]) == 5 and stats["daily"]["ecos"] == 2, "reto del día: resolverlo sube la racha (4 -> 5) y guarda el récord")
+
+	# Abrir un enlace: aparece la pregunta y "Ver la solución" la repite.
+	g.level_idx = 0
+	g._load_level()
+	play_attempt(g, SOL[0][0])
+	play_attempt(g, SOL[0][1])
+	tree.root.get_node("GameManager").pending_ecos = g.solution_code
+	var g3: Node = await open("res://games/arcade/ecos/ecos.tscn")
+	var see: Button = null
+	for b in g3.find_children("*", "Button", true, false):
+		if b.text.contains("Ver la solución"):
+			see = b
+	check(see != null and tree.root.get_node("GameManager").pending_ecos == "", "enlace: pregunta si ver la solución o intentarlo")
+	if see:
+		see.pressed.emit()
+		check(g3.mode == "shared" and g3.state == "replay" and g3.ecos.size() == 1, "enlace: se ve la repetición de la solución")
+

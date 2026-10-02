@@ -279,6 +279,17 @@ var games: Array[Dictionary] = [
 ]
 
 var current_game_id: String = ""
+## Solución de Ecos que llegó en el enlace (?ecos=...); la recoge Ecos.
+var pending_ecos: String = ""
+
+
+func _ready() -> void:
+	if OS.has_feature("web"):
+		# Se lee una sola vez y se quita de la dirección, para que recargar
+		# la página no vuelva a abrir la misma solución.
+		var code = JavaScriptBridge.eval("(function(){var c=new URLSearchParams(location.search).get('ecos')||'';if(c){history.replaceState(null,'',location.pathname);}return c;})()")
+		if code is String:
+			pending_ecos = code
 
 
 func get_games_by_category(category: String) -> Array[Dictionary]:

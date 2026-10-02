@@ -16,6 +16,13 @@ extends Control
 ##
 ## Control táctil: arrastra para moverte (joystick invisible donde pongas
 ## el dedo) y toca para terminar el intento ahí mismo.
+##
+## Reto del día: un nivel elegido por la fecha (el mismo para todos), con
+## récord del día y racha de días seguidos.
+## Compartir: la solución se guarda como las direcciones que tocaste en
+## cada intento (16 direcciones, 60 por segundo, comprimidas) y viaja en un
+## enlace ?ecos=...; quien lo abre vuelve a simular esos intentos y ve la
+## repetición (o decide intentarlo primero).
 
 const GAME_ID := "ecos"
 const T := 56.0                 # tamaño de cada casilla
@@ -27,6 +34,14 @@ const TICK := 1.0 / 60.0
 ## Los láseres parpadean: apagados LASER_OFF s de cada ciclo de LASER_CYCLE.
 const LASER_CYCLE := 3.0
 const LASER_OFF := 1.1
+## Direcciones posibles del movimiento (escritas a mano y no con sin/cos
+## para que la repetición de un enlace dé exactamente igual en cualquier
+## equipo). El índice 0 es "quieto"; k + 1 = k * 22.5°.
+const DIR16 := [Vector2(1, 0), Vector2(0.9238795, 0.3826834), Vector2(0.7071068, 0.7071068), Vector2(0.3826834, 0.9238795),
+	Vector2(0, 1), Vector2(-0.3826834, 0.9238795), Vector2(-0.7071068, 0.7071068), Vector2(-0.9238795, 0.3826834),
+	Vector2(-1, 0), Vector2(-0.9238795, -0.3826834), Vector2(-0.7071068, -0.7071068), Vector2(-0.3826834, -0.9238795),
+	Vector2(0, -1), Vector2(0.3826834, -0.9238795), Vector2(0.7071068, -0.7071068), Vector2(0.9238795, -0.3826834)]
+const SHARE_URL := "https://jfrodriguezva.github.io/Arcade/"
 const ECO_COLORS := [Color(1.0, 0.7, 0.3), Color(0.75, 0.5, 1.0), Color(0.4, 1.0, 0.6), Color(1.0, 0.5, 0.7), Color(0.5, 0.85, 1.0), Color(1.0, 1.0, 0.5)]
 
 ## '#' pared · '.' piso · 'S' inicio · 'E' salida · a-d botón · A-D puerta ·
@@ -140,6 +155,116 @@ const LEVELS := [
 		"#####B#####",
 		"#....E....#",
 		"###########"]},
+	{"name": "Carnada doble", "loop": 10.0, "max": 2, "hint": "Dos guardias: cada uno se queda con el primer eco que atrape.", "map": [
+		"###########",
+		"#....S....#",
+		"#.........#",
+		"#.........#",
+		"#..G...G..#",
+		"####...####",
+		"#####.#####",
+		"#####.#####",
+		"#####E#####",
+		"###########"]},
+	{"name": "Dos en uno", "loop": 10.0, "max": 1, "hint": "El botón está justo en el camino del láser...", "map": [
+		"###########",
+		"#S........#",
+		"#.........#",
+		"#.###v###.#",
+		"#.........#",
+		"#####a#####",
+		"#####.#####",
+		"#####.#####",
+		"#####A#####",
+		"#####E#####",
+		"###########"]},
+	{"name": "Fuego cruzado", "loop": 12.0, "max": 2, "hint": "", "map": [
+		"###########",
+		"#S........#",
+		"#.........#",
+		"#.........#",
+		"#.#######.#",
+		">.........<",
+		"#####.#####",
+		"#####E#####",
+		"###########"]},
+	{"name": "Guardián", "loop": 12.0, "max": 2, "hint": "", "map": [
+		"###########",
+		"#S...a....#",
+		"#.........#",
+		"#####A#####",
+		"#.........#",
+		"#...G.....#",
+		"#.........#",
+		"#########.#",
+		"#########E#",
+		"###########"]},
+	{"name": "Escolta", "loop": 10.0, "max": 2, "hint": "", "map": [
+		"###########",
+		"#S.......a#",
+		"#.........#",
+		"#.......G.#",
+		"#.........#",
+		"#####A#####",
+		"#....E....#",
+		"###########"]},
+	{"name": "Escalera", "loop": 14.0, "max": 3, "hint": "", "map": [
+		"###########",
+		"#....S...a#",
+		"#.........#",
+		"#####A#####",
+		"#b.......c#",
+		"#.........#",
+		"#####B#####",
+		"#.........#",
+		"#####C#####",
+		"#....E....#",
+		"###########"]},
+	{"name": "Luz vigilada", "loop": 12.0, "max": 1, "hint": "Un solo eco para tapar el láser... y el guardia rondando.", "map": [
+		"###########",
+		"#S........#",
+		"#.........#",
+		"#........G#",
+		"#.###v###.#",
+		"#.........#",
+		"#####.#####",
+		"#####.#####",
+		"#####.#####",
+		"#####E#####",
+		"###########"]},
+	{"name": "Encrucijada", "loop": 14.0, "max": 3, "hint": "", "map": [
+		"###########",
+		"#S.......a#",
+		"#.........#",
+		"#.........#",
+		"#.#######.#",
+		">.........<",
+		"#####A#####",
+		"#####.#####",
+		"#####E#####",
+		"###########"]},
+	{"name": "Dos guardianes", "loop": 12.0, "max": 3, "hint": "", "map": [
+		"###########",
+		"#S........#",
+		"#.........#",
+		"#..G...G..#",
+		"#.........#",
+		"#a#######A#",
+		"#########.#",
+		"#########E#",
+		"###########"]},
+	{"name": "La gran fuga", "loop": 14.0, "max": 3, "hint": "", "map": [
+		"###########",
+		"#S........#",
+		"#.......a.#",
+		"#.....G...#",
+		"#.###v###.#",
+		"#.........#",
+		"#####.#####",
+		"#####.#####",
+		"#####A#####",
+		"#####E#####",
+		"###########"]},
 ]
 
 const HELP_TEXT := "Juegas en equipo contigo mismo.
@@ -152,7 +277,10 @@ Cada intento dura unos segundos (la barra de arriba). Al terminar, vuelve a empe
 
 Piezas: los botones abren su puerta (misma letra) mientras alguien esté encima · los láseres se detienen en el primer cuerpo que tocan, así que un eco puede bloquearlos · el guardia persigue al más cercano y, si atrapa a un eco, se queda con él.
 
-Si un láser o un guardia te alcanza, el intento se repite. ↶ borra tu último eco y ⟲ reinicia el nivel. Menos ecos = más estrellas."
+Si un láser o un guardia te alcanza, el intento se repite. ↶ borra tu último eco y ⟲ reinicia el nivel. Menos ecos = mejor récord. ◀ ▶ cambian de nivel.
+
+📅 Reto del día: un nivel distinto cada día (el mismo para todos). Resuélvelo para sumar a tu racha.
+🔗 Al resolver un nivel puedes compartir tu solución: quien abra el enlace verá la repetición o podrá intentarlo primero."
 
 var level_idx: int = 0
 var unlocked: int = 1
@@ -180,6 +308,21 @@ var flash: String = ""
 var flash_t: float = 0.0
 var replay_rec: PackedVector2Array
 
+## Direcciones tocadas (índices de DIR16) de cada eco y del intento actual:
+## con esto se arma el enlace para compartir.
+var eco_inputs: Array = []
+var inputs: PackedByteArray = PackedByteArray()
+var feeding: bool = false       # simulando un enlace: las direcciones salen de feed
+var feed: PackedByteArray = PackedByteArray()
+var feed_i: int = 0
+var silent: bool = false
+var mode: String = "normal"     # normal | daily | shared
+var daily_date: String = ""
+var solution_code: String = ""
+var solution_ecos: int = 0
+var solution_secs: float = 0.0
+var friend_ecos: int = -1       # "inténtalo tú primero": ecos que usó quien compartió
+
 var board: Control
 var pad: GesturePad
 var title_label: Label
@@ -187,6 +330,10 @@ var info_label: Label
 var hint_label: Label
 var timer_bar: ProgressBar
 var next_btn: Button
+var prev_lv_btn: Button
+var next_lv_btn: Button
+var share_btn: Button
+var daily_btn: Button
 
 
 func _ready() -> void:
@@ -195,6 +342,14 @@ func _ready() -> void:
 	level_idx = clampi(unlocked - 1, 0, LEVELS.size() - 1)
 	_build_ui()
 	_load_level()
+	if GameManager.pending_ecos != "":
+		var info: Dictionary = decode_solution(GameManager.pending_ecos)
+		GameManager.pending_ecos = ""
+		if info.is_empty():
+			flash = "Ese enlace de Ecos no es válido"
+			flash_t = 2.5
+		else:
+			_show_shared_prompt(info)
 	TouchHint.show_once(self, GAME_ID, [["↔", "Arrastra: muévete (donde pones el dedo es el centro del joystick)."], ["👆", "Toca: termina el intento ahí. Tu eco se quedará en ese lugar."]])
 
 
@@ -211,8 +366,20 @@ func _build_ui() -> void:
 	margin.add_child(vbox)
 	UIKit.build_toolbar(vbox, self, "Ecos", HELP_TEXT)
 
+	var title_row := HBoxContainer.new()
+	title_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	title_row.add_theme_constant_override("separation", 10)
+	vbox.add_child(title_row)
+	prev_lv_btn = _small_btn("◀")
+	prev_lv_btn.pressed.connect(func() -> void: _go_level(level_idx - 1 if mode == "normal" else unlocked - 1))
+	title_row.add_child(prev_lv_btn)
 	title_label = UIKit.title_label("", 17, UIKit.COLOR_ACCENT_2)
-	vbox.add_child(title_label)
+	title_label.custom_minimum_size = Vector2(440, 0)
+	title_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	title_row.add_child(title_label)
+	next_lv_btn = _small_btn("▶")
+	next_lv_btn.pressed.connect(func() -> void: _go_level(level_idx + 1 if mode == "normal" else unlocked - 1))
+	title_row.add_child(next_lv_btn)
 	info_label = UIKit.title_label("", 14, UIKit.COLOR_TEXT)
 	vbox.add_child(info_label)
 	timer_bar = ProgressBar.new()
@@ -251,6 +418,7 @@ func _build_ui() -> void:
 	undo_btn.pressed.connect(func() -> void:
 		if state in ["playing", "failed"] and not ecos.is_empty():
 			ecos.pop_back()
+			eco_inputs.pop_back()
 			_start_loop())
 	row.add_child(undo_btn)
 	var reset_btn := Button.new()
@@ -265,10 +433,44 @@ func _build_ui() -> void:
 	UIKit.style_button(next_btn, UIKit.COLOR_ACCENT_2)
 	next_btn.visible = false
 	next_btn.pressed.connect(func() -> void:
-		if level_idx < LEVELS.size() - 1:
-			level_idx += 1
-		_load_level())
+		if mode != "normal":
+			_go_level(unlocked - 1)
+		else:
+			_go_level(mini(level_idx + 1, LEVELS.size() - 1)))
 	vbox.add_child(next_btn)
+
+	var row2 := HBoxContainer.new()
+	row2.alignment = BoxContainer.ALIGNMENT_CENTER
+	row2.add_theme_constant_override("separation", 12)
+	vbox.add_child(row2)
+	daily_btn = Button.new()
+	daily_btn.text = "📅  Reto del día"
+	daily_btn.custom_minimum_size = Vector2(200, 46)
+	UIKit.style_button(daily_btn, UIKit.COLOR_ACCENT)
+	daily_btn.pressed.connect(_start_daily)
+	row2.add_child(daily_btn)
+	share_btn = Button.new()
+	share_btn.text = "🔗  Compartir solución"
+	share_btn.custom_minimum_size = Vector2(230, 46)
+	UIKit.style_button(share_btn, UIKit.COLOR_ACCENT_2)
+	share_btn.visible = false
+	share_btn.pressed.connect(_share)
+	row2.add_child(share_btn)
+
+
+func _small_btn(txt: String) -> Button:
+	var b := Button.new()
+	b.text = txt
+	b.custom_minimum_size = Vector2(52, 44)
+	UIKit.style_button(b, UIKit.COLOR_TEXT_DIM)
+	return b
+
+
+func _go_level(i: int) -> void:
+	mode = "normal"
+	friend_ecos = -1
+	level_idx = clampi(i, 0, mini(unlocked, LEVELS.size()) - 1)
+	_load_level()
 
 
 # ---------------------------------------------------------------- niveles --
@@ -300,9 +502,24 @@ func _load_level() -> void:
 	board.custom_minimum_size = Vector2(COLS * T, rows * T)
 	board.size = board.custom_minimum_size
 	ecos.clear()
+	eco_inputs.clear()
+	solution_code = ""
 	next_btn.visible = false
-	title_label.text = "Nivel %d/%d · %s" % [level_idx + 1, LEVELS.size(), lv["name"]]
+	share_btn.visible = false
+	match mode:
+		"daily":
+			title_label.text = "📅 Reto del día · %s" % lv["name"]
+		"shared":
+			title_label.text = "🔗 Solución compartida · Nivel %d · %s" % [level_idx + 1, lv["name"]]
+		_:
+			title_label.text = "Nivel %d/%d · %s" % [level_idx + 1, LEVELS.size(), lv["name"]]
+	prev_lv_btn.disabled = mode == "normal" and level_idx == 0
+	next_lv_btn.disabled = mode == "normal" and level_idx >= mini(unlocked, LEVELS.size()) - 1
 	hint_label.text = lv["hint"]
+	if friend_ecos >= 0:
+		hint_label.text = "Reto de un amigo: lo resolvió con %d eco%s. ¿Puedes igualarlo?" % [friend_ecos, "" if friend_ecos == 1 else "s"]
+	elif mode == "daily":
+		hint_label.text = _daily_status()
 	_start_loop()
 
 
@@ -312,6 +529,7 @@ func _center(c: Vector2i) -> Vector2:
 
 func _start_loop() -> void:
 	recording = PackedVector2Array()
+	inputs = PackedByteArray()
 	tick = 0
 	acc = 0.0
 	player = start_pos
@@ -331,6 +549,10 @@ func _update_info() -> void:
 	info_label.text = "Ecos: %d / %d" % [ecos.size(), lv["max"]]
 	if ecos.size() >= lv["max"]:
 		info_label.text += "   ·   ¡último intento con estos ecos!"
+	elif mode == "normal":
+		var best: Array = SaveManager.get_game_data(GAME_ID).get("best", {}).get(str(level_idx), [])
+		if best.size() == 2:
+			info_label.text += "   ·   récord: %d eco%s, %.1f s" % [int(best[0]), "" if int(best[0]) == 1 else "s", float(best[1])]
 
 
 # ------------------------------------------------------------- simulación --
@@ -367,6 +589,13 @@ func _input_dir() -> Vector2:
 	return d.limit_length(1.0)
 
 
+## Dirección -> índice de DIR16 (0 = quieto).
+static func _dir_index(v: Vector2) -> int:
+	if v.length() < 0.1:
+		return 0
+	return posmod(roundi(v.angle() / (TAU / 16.0)), 16) + 1
+
+
 func _unhandled_key_input(event: InputEvent) -> void:
 	if event.pressed and not event.echo and event.keycode == KEY_SPACE:
 		_end_attempt()
@@ -379,7 +608,14 @@ func _step() -> void:
 	if state == "replay":
 		player = replay_rec[mini(tick, replay_rec.size() - 1)]
 	else:
-		var d: Vector2 = _input_dir()
+		var k: int
+		if feeding:
+			k = feed[feed_i] if feed_i < feed.size() else 0
+			feed_i += 1
+		else:
+			k = _dir_index(_input_dir())
+		inputs.append(k)
+		var d: Vector2 = Vector2.ZERO if k == 0 else DIR16[k - 1]
 		player = _move(player, d * SPEED * TICK)
 		recording.append(player)
 	for i in range(ecos.size()):
@@ -394,7 +630,10 @@ func _step() -> void:
 	if _cell_of(player) == exit_cell:
 		if state == "replay":
 			return
-		_win()
+		if silent:
+			state = "won"
+		else:
+			_win()
 		return
 	tick += 1
 	if tick >= loop_ticks:
@@ -563,6 +802,8 @@ func _fail(msg: String) -> void:
 	if state != "playing":
 		return
 	state = "failed"
+	if silent:
+		return
 	flash = msg
 	flash_t = 1.2
 	AudioManager.play_error()
@@ -573,35 +814,59 @@ func _fail(msg: String) -> void:
 
 ## Termina el intento: se guarda como eco (si quedan) y empieza otro ciclo.
 func _end_attempt() -> void:
-	AudioManager.vibrate(30)
 	if state != "playing" or recording.size() < 2:
 		return
 	var lv: Dictionary = LEVELS[level_idx]
 	if ecos.size() < lv["max"]:
 		ecos.append(recording)
-		AudioManager.play_place()
+		eco_inputs.append(inputs)
 		flash = "Eco %d grabado" % ecos.size()
+		if not silent:
+			AudioManager.play_place()
 	else:
 		flash = "Ya no quedan ecos: inténtalo otra vez (o borra uno)"
-		AudioManager.play_error()
-	flash_t = 1.0
+		if not silent:
+			AudioManager.play_error()
+	if not silent:
+		AudioManager.vibrate(30)
+		flash_t = 1.0
 	_start_loop()
 
 
 func _win() -> void:
 	state = "won"
-	var lv: Dictionary = LEVELS[level_idx]
 	var used: int = ecos.size()
+	var secs: float = recording.size() * TICK
+	solution_code = encode_solution()
+	solution_ecos = used
+	solution_secs = secs
 	AudioManager.play_win()
-	unlocked = maxi(unlocked, mini(level_idx + 2, LEVELS.size()))
 	var stats: Dictionary = SaveManager.get_game_data(GAME_ID)
-	stats["unlocked"] = unlocked
+	hint_label.text = "Mira la repetición: todos tus ecos a la vez."
+	if mode == "daily":
+		hint_label.text = _record_daily(stats, used, secs)
+	else:
+		# Un nivel abierto desde un enlace no adelanta tu progreso.
+		if level_idx < unlocked:
+			unlocked = maxi(unlocked, mini(level_idx + 2, LEVELS.size()))
+			stats["unlocked"] = unlocked
+		var best: Dictionary = stats.get("best", {})
+		var old: Array = best.get(str(level_idx), [])
+		if old.size() != 2 or used < int(old[0]) or (used == int(old[0]) and secs < float(old[1])):
+			best[str(level_idx)] = [used, snappedf(secs, 0.1)]
+			stats["best"] = best
+		if friend_ecos >= 0:
+			hint_label.text = "¡Igualaste a tu amigo!" if used <= friend_ecos else "Tu amigo lo hizo con %d eco%s. ¿Otra vez?" % [friend_ecos, "" if friend_ecos == 1 else "s"]
 	SaveManager.set_game_data(GAME_ID, stats)
 	flash = "¡Resuelto con %d eco%s!" % [used, "" if used == 1 else "s"]
 	flash_t = 3.0
-	hint_label.text = "Mira la repetición: todos tus ecos a la vez."
-	next_btn.text = "▶  Siguiente nivel" if level_idx < LEVELS.size() - 1 else "🏁  ¡Terminaste Ecos! Jugar de nuevo"
+	if mode == "normal":
+		next_btn.text = "▶  Siguiente nivel" if level_idx < LEVELS.size() - 1 else "🏁  ¡Terminaste Ecos! Jugar de nuevo"
+	else:
+		next_btn.text = "▶  Volver a mis niveles"
 	next_btn.visible = true
+	share_btn.visible = true
+	next_lv_btn.disabled = mode == "normal" and level_idx >= mini(unlocked, LEVELS.size()) - 1
 	# Repetición de la solución completa (la gracia de compartirla).
 	replay_rec = recording
 	_start_replay_loop()
@@ -619,6 +884,233 @@ func _start_replay_loop() -> void:
 		guards.append({"pos": g, "holding": -1})
 	open_doors.clear()
 	state = "replay"
+
+
+# ---------------------------------------------------------- reto del día --
+func _today() -> String:
+	return Time.get_date_string_from_system()
+
+
+## Nivel del día: sale de la fecha, así todos juegan el mismo. Se saltan
+## los dos primeros (son tutoriales).
+static func daily_level(date: String) -> int:
+	return 2 + posmod(("ecos-" + date).hash(), LEVELS.size() - 2)
+
+
+func _start_daily() -> void:
+	mode = "daily"
+	friend_ecos = -1
+	daily_date = _today()
+	level_idx = daily_level(daily_date)
+	_load_level()
+
+
+func _daily_status() -> String:
+	var stats: Dictionary = SaveManager.get_game_data(GAME_ID)
+	var d: Dictionary = stats.get("daily", {})
+	var streak: int = int(stats.get("streak", 0)) if stats.get("streak_last", "") in [daily_date, _day_before(daily_date)] else 0
+	var txt := "Racha: 🔥 %d día%s" % [streak, "" if streak == 1 else "s"]
+	if d.get("date", "") == daily_date:
+		txt = "Hoy: %d eco%s, %.1f s  ·  %s  ·  ¿lo mejoras?" % [int(d["ecos"]), "" if int(d["ecos"]) == 1 else "s", float(d["secs"]), txt]
+	else:
+		txt = "Un nivel nuevo cada día, el mismo para todos.  ·  " + txt
+	return txt
+
+
+static func _day_before(date: String) -> String:
+	return Time.get_date_string_from_unix_time(Time.get_unix_time_from_datetime_string(date + "T12:00:00") - 86400)
+
+
+func _record_daily(stats: Dictionary, used: int, secs: float) -> String:
+	if stats.get("streak_last", "") != daily_date:
+		var streak: int = int(stats.get("streak", 0)) + 1 if stats.get("streak_last", "") == _day_before(daily_date) else 1
+		stats["streak"] = streak
+		stats["streak_last"] = daily_date
+		stats["best_streak"] = maxi(int(stats.get("best_streak", 0)), streak)
+	var d: Dictionary = stats.get("daily", {})
+	if d.get("date", "") != daily_date or used < int(d["ecos"]) or (used == int(d["ecos"]) and secs < float(d["secs"])):
+		stats["daily"] = {"date": daily_date, "ecos": used, "secs": snappedf(secs, 0.1)}
+	var st: int = int(stats["streak"])
+	return "📅 ¡Reto del día resuelto! %d eco%s, %.1f s  ·  racha 🔥 %d día%s" % [used, "" if used == 1 else "s", secs, st, "" if st == 1 else "s"]
+
+
+# -------------------------------------------------------------- compartir --
+## Solución -> texto corto para el enlace: versión, nivel, intentos y, por
+## intento, tramos [dirección, cuántos pasos] (máx. 255 por tramo).
+func encode_solution() -> String:
+	var b := PackedByteArray([1, level_idx, eco_inputs.size() + 1])
+	for att: PackedByteArray in eco_inputs + [inputs]:
+		var runs := PackedByteArray()
+		var n := 0
+		var i := 0
+		while i < att.size():
+			var run := 1
+			while i + run < att.size() and att[i + run] == att[i] and run < 255:
+				run += 1
+			runs.append(att[i])
+			runs.append(run)
+			n += 1
+			i += run
+		b.append(n >> 8)
+		b.append(n & 255)
+		b.append_array(runs)
+	return Marshalls.raw_to_base64(b).replace("+", "-").replace("/", "_").replace("=", "")
+
+
+static func decode_solution(code: String) -> Dictionary:
+	var c := code.strip_edges().replace("-", "+").replace("_", "/")
+	if c.is_empty() or c.length() > 8000:
+		return {}
+	for ch in c:
+		if not (ch in "+/" or (ch >= "A" and ch <= "Z") or (ch >= "a" and ch <= "z") or (ch >= "0" and ch <= "9")):
+			return {}
+	while c.length() % 4 != 0:
+		c += "="
+	var b: PackedByteArray = Marshalls.base64_to_raw(c)
+	if b.size() < 3 or b[0] != 1 or b[1] >= LEVELS.size() or b[2] < 1 or b[2] > 7:
+		return {}
+	var p := 3
+	var atts: Array = []
+	for a in range(b[2]):
+		if p + 2 > b.size():
+			return {}
+		var n: int = (b[p] << 8) | b[p + 1]
+		p += 2
+		var att := PackedByteArray()
+		for r in range(n):
+			if p + 2 > b.size() or b[p] > 16 or b[p + 1] == 0:
+				return {}
+			for q in range(b[p + 1]):
+				att.append(b[p])
+			p += 2
+			if att.size() > 60 * 60:
+				return {}
+		atts.append(att)
+	return {"level": b[1], "attempts": atts}
+
+
+## Vuelve a jugar los intentos de un enlace, sin sonido y de golpe. Devuelve
+## true si el último intento llega a la salida.
+func simulate_solution(info: Dictionary) -> bool:
+	level_idx = info["level"]
+	silent = true
+	_load_level()
+	var atts: Array = info["attempts"]
+	var ok := false
+	for k in range(atts.size()):
+		var last: bool = k == atts.size() - 1
+		var n0: int = ecos.size()
+		feed = atts[k]
+		feed_i = 0
+		feeding = true
+		var steps := 0
+		while state == "playing" and steps < 60 * 40:
+			if not last and feed_i >= feed.size():
+				_end_attempt()
+				break
+			_step()
+			steps += 1
+			if not last and ecos.size() != n0:
+				break
+		if state == "won":
+			ok = last
+			break
+		if state != "playing" or last or ecos.size() != n0 + 1:
+			break
+	feeding = false
+	feed = PackedByteArray()
+	silent = false
+	return ok
+
+
+func _show_shared_prompt(info: Dictionary) -> void:
+	var lv: Dictionary = LEVELS[info["level"]]
+	var n: int = info["attempts"].size() - 1
+	var overlay := ColorRect.new()
+	overlay.color = Color(0, 0, 0, 0.78)
+	overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	overlay.z_index = 50
+	add_child(overlay)
+	var center := CenterContainer.new()
+	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	overlay.add_child(center)
+	var panel := PanelContainer.new()
+	panel.add_theme_stylebox_override("panel", UIKit.stylebox(UIKit.COLOR_BG, UIKit.COLOR_ACCENT_2, 16, 2))
+	center.add_child(panel)
+	var m := MarginContainer.new()
+	for side: String in ["margin_left", "margin_right", "margin_top", "margin_bottom"]:
+		m.add_theme_constant_override(side, 24)
+	panel.add_child(m)
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 14)
+	m.add_child(box)
+	box.add_child(UIKit.title_label("🔗 Te compartieron una solución", 22, UIKit.COLOR_ACCENT_2))
+	box.add_child(UIKit.title_label("Nivel %d · «%s»\nresuelto con %d eco%s" % [info["level"] + 1, lv["name"], n, "" if n == 1 else "s"], 17, UIKit.COLOR_TEXT))
+	var see := Button.new()
+	see.text = "▶  Ver la solución"
+	see.custom_minimum_size = Vector2(320, 54)
+	UIKit.style_button(see, UIKit.COLOR_ACCENT_2)
+	box.add_child(see)
+	var tryit := Button.new()
+	tryit.text = "🎮  Intentarlo yo primero"
+	tryit.custom_minimum_size = Vector2(320, 54)
+	UIKit.style_button(tryit, UIKit.COLOR_ACCENT)
+	box.add_child(tryit)
+	see.pressed.connect(func() -> void:
+		overlay.queue_free()
+		_play_shared(info))
+	tryit.pressed.connect(func() -> void:
+		overlay.queue_free()
+		mode = "normal"
+		friend_ecos = n
+		level_idx = info["level"]
+		_load_level())
+
+
+func _play_shared(info: Dictionary) -> void:
+	mode = "shared"
+	friend_ecos = -1
+	if not simulate_solution(info):
+		mode = "normal"
+		level_idx = clampi(unlocked - 1, 0, LEVELS.size() - 1)
+		_load_level()
+		flash = "No se pudo reproducir esa solución"
+		flash_t = 2.5
+		return
+	solution_code = encode_solution()
+	solution_ecos = ecos.size()
+	solution_secs = recording.size() * TICK
+	hint_label.text = "Así lo resolvió: %d eco%s, %.1f s." % [solution_ecos, "" if solution_ecos == 1 else "s", solution_secs]
+	next_btn.text = "▶  Volver a mis niveles"
+	next_btn.visible = true
+	share_btn.visible = true
+	replay_rec = recording
+	_start_replay_loop()
+
+
+func _share() -> void:
+	if solution_code == "":
+		return
+	var lv: Dictionary = LEVELS[level_idx]
+	var e := "%d eco%s" % [solution_ecos, "" if solution_ecos == 1 else "s"]
+	var text: String
+	if mode == "daily":
+		var stats: Dictionary = SaveManager.get_game_data(GAME_ID)
+		text = "📅 Ecos, reto del día %s: lo resolví con %s en %.1f s (racha 🔥 %d). ¿Me superas?" % [daily_date, e, solution_secs, int(stats.get("streak", 1))]
+	else:
+		text = "Ecos, nivel %d «%s»: lo resolví con %s. Mira mi solución o inténtalo tú:" % [level_idx + 1, lv["name"], e]
+	var base := SHARE_URL
+	if OS.has_feature("web"):
+		base = str(JavaScriptBridge.eval("location.origin + location.pathname"))
+	var url := base + "?ecos=" + solution_code
+	if OS.has_feature("web"):
+		var how = JavaScriptBridge.eval("(function(t,u){try{if(navigator.share){navigator.share({title:'Ecos',text:t,url:u}).catch(function(){});return 'share';}}catch(e){}try{navigator.clipboard.writeText(t+' '+u);return 'copy';}catch(e){return 'fail';}})(%s,%s)" % [JSON.stringify(text), JSON.stringify(url)])
+		flash = "¡Enlace copiado!" if str(how) == "copy" else ("No se pudo compartir" if str(how) == "fail" else "Compartiendo…")
+	else:
+		DisplayServer.clipboard_set(text + " " + url)
+		flash = "¡Enlace copiado al portapapeles!"
+	flash_t = 2.0
+	AudioManager.play_click()
 
 
 # ----------------------------------------------------------------- dibujo --
