@@ -36,12 +36,12 @@ const UFO_BULLET_LIFETIME := 1.6
 const EXTRA_LIFE_SCORE := 10000
 const HYPERSPACE_RISK := 0.10
 
-const HELP_TEXT := "Controla tu nave con los botones de abajo:
+const HELP_TEXT := "Se juega tocando directamente el juego:
 
-- ◀ / ▶ giran la nave.
-- ▲ acelera en la dirección a la que apuntas (la nave tiene inercia, sigue moviéndose aunque sueltes el botón).
-- ● dispara.
-- ✦ hiperespacio: teletransporte de emergencia a una posición al azar. Es arriesgado — hay una pequeña probabilidad de que la nave no resista el salto.
+- Mantén el dedo sobre la pantalla: la nave gira hacia tu dedo y dispara cuando apunta hacia él.
+- Si tu dedo está lejos de la nave, además acelera hacia allá (la nave tiene inercia, sigue moviéndose aunque sueltes).
+- Doble toque: hiperespacio, teletransporte de emergencia a una posición al azar. Es arriesgado — hay una pequeña probabilidad de que la nave no resista el salto.
+(En teclado: flechas para girar, ↑ para acelerar y espacio para disparar.)
 
 Si sales por un borde de la pantalla, apareces por el lado opuesto — tus balas también. Como en el original, solo puedes tener 4 balas en pantalla a la vez, y el latido de fondo se acelera conforme quedan menos asteroides. Destruye los asteroides grandes: se dividen en 2 más chicos (y esos en 2 más chicos todavía) hasta desaparecer — entre más chico, más puntos vale.
 
@@ -56,6 +56,9 @@ var ship_phase: float = 0.0
 var rotating_left: bool = false
 var rotating_right: bool = false
 var thrusting: bool = false
+var pad: GesturePad
+const THRUST_DISTANCE := 150.0   # dedo más lejos que esto de la nave = acelerar
+const AIM_TOLERANCE := 0.3       # radianes: ya apunta "casi" al dedo -> dispara
 var fire_cooldown_left: float = 0.0
 var invulnerable_time: float = 0.0
 
@@ -147,43 +150,11 @@ func _build_ui() -> void:
 	ship_sprite.setup("ship", UIKit.COLOR_ACCENT, UIKit.COLOR_ACCENT_3)
 	play_area.add_child(ship_sprite)
 
-	var controls := HBoxContainer.new()
-	controls.alignment = BoxContainer.ALIGNMENT_CENTER
-	controls.add_theme_constant_override("separation", 14)
-	vbox.add_child(controls)
-
-	var left_btn := _make_hold_button("◀", UIKit.COLOR_ACCENT_2)
-	left_btn.button_down.connect(func() -> void: rotating_left = true)
-	left_btn.button_up.connect(func() -> void: rotating_left = false)
-	controls.add_child(left_btn)
-
-	var right_btn := _make_hold_button("▶", UIKit.COLOR_ACCENT_2)
-	right_btn.button_down.connect(func() -> void: rotating_right = true)
-	right_btn.button_up.connect(func() -> void: rotating_right = false)
-	controls.add_child(right_btn)
-
-	var spacer := Control.new()
-	spacer.custom_minimum_size = Vector2(20, 1)
-	controls.add_child(spacer)
-
-	var thrust_btn := _make_hold_button("▲", UIKit.COLOR_ACCENT_3)
-	thrust_btn.button_down.connect(func() -> void: thrusting = true)
-	thrust_btn.button_up.connect(func() -> void: thrusting = false)
-	controls.add_child(thrust_btn)
-
-	var fire_btn := _make_hold_button("●", UIKit.COLOR_ACCENT)
-	fire_btn.pressed.connect(_on_fire_pressed)
-	controls.add_child(fire_btn)
-
-	var spacer2 := Control.new()
-	spacer2.custom_minimum_size = Vector2(10, 1)
-	controls.add_child(spacer2)
-
-	var hyperspace_btn := _make_hold_button("✦", UIKit.COLOR_DANGER)
-	hyperspace_btn.custom_minimum_size = Vector2(72, 88)
-	hyperspace_btn.add_theme_font_size_override("font_size", 26)
-	hyperspace_btn.pressed.connect(_on_hyperspace_pressed)
-	controls.add_child(hyperspace_btn)
+	# Control táctil sin botones: mantén el dedo sobre el juego y la nave
+	# gira hacia él y dispara; si el dedo está lejos de la nave, además
+	# acelera hacia allá. Doble toque = hiperespacio.
+	pad = GesturePad.attach(play_area)
+	pad.double_tapped.connect(func(_p: Vector2) -> void: _on_hyperspace_pressed())
 
 	var restart_btn := Button.new()
 	restart_btn.text = "🔁  Nueva partida"
@@ -191,15 +162,6 @@ func _build_ui() -> void:
 	UIKit.style_button(restart_btn, UIKit.COLOR_ACCENT_3)
 	restart_btn.pressed.connect(_new_game)
 	vbox.add_child(restart_btn)
-
-
-func _make_hold_button(label: String, accent: Color = UIKit.COLOR_ACCENT_2) -> Button:
-	var btn := Button.new()
-	btn.text = label
-	btn.custom_minimum_size = Vector2(92, 88)
-	btn.add_theme_font_size_override("font_size", 32)
-	UIKit.style_button(btn, accent)
-	return btn
 
 
 func _new_game() -> void:
@@ -400,12 +362,24 @@ func _process(delta: float) -> void:
 	if fire_cooldown_left > 0.0:
 		fire_cooldown_left -= delta
 
-	if rotating_left:
+	var touch_thrust := false
+	if pad.is_down:
+		var to_finger: Vector2 = pad.current_pos - ship_pos
+		var want: float = atan2(to_finger.x, -to_finger.y)
+		var diff: float = wrapf(want - ship_rot, -PI, PI)
+		ship_rot += clampf(diff, -ROT_SPEED * delta, ROT_SPEED * delta)
+		touch_thrust = to_finger.length() > THRUST_DISTANCE
+		if absf(diff) < AIM_TOLERANCE:
+			_on_fire_pressed()
+	if rotating_left or Input.is_key_pressed(KEY_LEFT):
 		ship_rot -= ROT_SPEED * delta
-	if rotating_right:
+	if rotating_right or Input.is_key_pressed(KEY_RIGHT):
 		ship_rot += ROT_SPEED * delta
+	if Input.is_key_pressed(KEY_SPACE):
+		_on_fire_pressed()
 
 	var dir := Vector2(sin(ship_rot), -cos(ship_rot))
+	thrusting = touch_thrust or Input.is_key_pressed(KEY_UP)
 	if thrusting:
 		ship_vel += dir * THRUST * delta
 	ship_vel *= pow(1.0 - FRICTION_PER_SEC, delta)

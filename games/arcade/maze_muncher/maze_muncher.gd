@@ -107,7 +107,7 @@ const FRUIT_DURATION := 9.5
 const READY_TIME := 1.8
 const DEATH_TIME := 1.4
 
-const HELP_TEXT := "Muévete con la cruceta (o las flechas del teclado). No hace falta mantener presionado: el muncher sigue avanzando hasta chocar con una pared, y si pides un giro antes de llegar a la esquina, lo toma en cuanto pueda.
+const HELP_TEXT := "Desliza el dedo sobre el laberinto hacia donde quieras ir (o usa las flechas del teclado). No hace falta mantener el dedo: el muncher sigue avanzando hasta chocar con una pared, y si pides un giro antes de llegar a la esquina, lo toma en cuanto pueda.
 
 - Es el laberinto del arcade original: 240 puntos, 4 bolitas de poder en las esquinas y un túnel a los lados (sales por un lado y apareces por el otro; los fantasmas van más lentos dentro del túnel).
 - Cada fantasma tiene su personalidad: el rojo te persigue directo, el rosa embosca por delante, el cian flanquea combinando tu posición con la del rojo, y el naranja huye si te acercas.
@@ -133,6 +133,9 @@ var anim_time: float = 0.0
 var level_time: float = 0.0
 var pause_timer: float = 0.0  # "¡Listo!" al empezar y la animación de muerte
 var dying: bool = false
+var pad: GesturePad
+var swipe_anchor: Vector2 = Vector2.ZERO
+const SWIPE_STEP := 26.0
 
 var ghosts: Array = []
 var mode_index: int = 0
@@ -245,58 +248,15 @@ func _build_ui() -> void:
 	player_view.setup("muncher", Color(1.0, 0.9, 0.1), Color(1.0, 0.95, 0.5))
 	play_area.add_child(player_view)
 
-	var controls_margin := MarginContainer.new()
-	controls_margin.add_theme_constant_override("margin_left", 12)
-	controls_margin.add_theme_constant_override("margin_right", 12)
-	controls_margin.add_theme_constant_override("margin_top", 8)
-	controls_margin.add_theme_constant_override("margin_bottom", 12)
-	root_vbox.add_child(controls_margin)
-
-	var dpad_center := CenterContainer.new()
-	controls_margin.add_child(dpad_center)
-
-	var dpad := GridContainer.new()
-	dpad.columns = 3
-	dpad.add_theme_constant_override("h_separation", 8)
-	dpad.add_theme_constant_override("v_separation", 8)
-	dpad_center.add_child(dpad)
-
-	dpad.add_child(_make_dpad_spacer())
-	dpad.add_child(_make_dir_button("▲", Vector2i(0, -1)))
-	dpad.add_child(_make_dpad_spacer())
-	dpad.add_child(_make_dir_button("◀", Vector2i(-1, 0)))
-	dpad.add_child(_make_dpad_spacer())
-	dpad.add_child(_make_dir_button("▶", Vector2i(1, 0)))
-	dpad.add_child(_make_dpad_spacer())
-	dpad.add_child(_make_dir_button("▼", Vector2i(0, 1)))
-	dpad.add_child(_make_dpad_spacer())
-
-
-func _make_dir_button(label: String, d: Vector2i) -> Button:
-	var btn := Button.new()
-	btn.text = label
-	btn.custom_minimum_size = Vector2(64, 64)
-	btn.add_theme_font_size_override("font_size", 24)
-	btn.focus_mode = Control.FOCUS_NONE
-	UIKit.style_button(btn, UIKit.COLOR_ACCENT_2, 16)
-	btn.button_down.connect(func() -> void:
-		desired_dir = d
-		_press_scale(btn, true))
-	btn.button_up.connect(func() -> void: _press_scale(btn, false))
-	return btn
-
-
-func _make_dpad_spacer() -> Control:
-	var c := Control.new()
-	c.custom_minimum_size = Vector2(64, 64)
-	c.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	return c
-
-
-func _press_scale(btn: Button, pressed_down: bool) -> void:
-	btn.pivot_offset = btn.size / 2.0
-	var tween := btn.create_tween()
-	tween.tween_property(btn, "scale", Vector2(0.88, 0.88) if pressed_down else Vector2.ONE, 0.08)
+	# Control táctil sin botones: desliza el dedo sobre el laberinto hacia
+	# donde quieras ir (puedes encadenar giros sin levantar el dedo).
+	pad = GesturePad.attach(play_area)
+	pad.pressed.connect(func(p: Vector2) -> void: swipe_anchor = p)
+	pad.dragged.connect(func(p: Vector2, _f: Vector2, _s: Vector2) -> void:
+		var d: Vector2 = p - swipe_anchor
+		if d.length() >= SWIPE_STEP:
+			desired_dir = GesturePad._dir_of(d)
+			swipe_anchor = p)
 
 
 func _input(event: InputEvent) -> void:

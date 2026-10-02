@@ -68,7 +68,7 @@ const CAPTURE_MIN_LEVEL := 2
 const CAPTURE_RETURN_DURATION := 0.8
 const CAPTURED_TINT := Color(0.55, 0.58, 0.66)
 
-const HELP_TEXT := "Muévete con ◀ ▶ y dispara con 🔫 hacia arriba.
+const HELP_TEXT := "Pon el dedo sobre el juego y arrástralo: la nave lo sigue de lado a lado y dispara sola mientras lo mantengas abajo. (En teclado: flechas y espacio.)
 
 Al iniciar cada nivel, la formación entra en 5 oleadas: convoyes que hacen un rizo y luego suben a su lugar — ya puedes dispararles mientras entran. Mientras se arma, la formación se desliza de lado a lado y, ya completa, se abre y se cierra y de vez en cuando una nave pica hacia ti en una curva envolvente, disparando — esquívala o destrúyela (vale más puntos que una que sigue en formación).
 
@@ -102,6 +102,7 @@ var challenge_timer: float = 0.0
 var challenges_done: Array = []
 
 var player_captured: bool = false
+var pad: GesturePad
 var captured_fighter: Dictionary = {}
 
 var score: int = 0
@@ -181,24 +182,9 @@ func _build_ui() -> void:
 	player_view.setup("ship", UIKit.COLOR_ACCENT_2, UIKit.COLOR_ACCENT_3)
 	play_area.add_child(player_view)
 
-	var controls := HBoxContainer.new()
-	controls.alignment = BoxContainer.ALIGNMENT_CENTER
-	controls.add_theme_constant_override("separation", 12)
-	vbox.add_child(controls)
-
-	var left_btn := _make_control_button("◀", UIKit.COLOR_ACCENT_2)
-	left_btn.button_down.connect(func() -> void: moving_left = true)
-	left_btn.button_up.connect(func() -> void: moving_left = false)
-	controls.add_child(left_btn)
-
-	var shoot_btn := _make_control_button("🔫", UIKit.COLOR_ACCENT, Vector2(118, 84))
-	shoot_btn.pressed.connect(_on_shoot_pressed)
-	controls.add_child(shoot_btn)
-
-	var right_btn := _make_control_button("▶", UIKit.COLOR_ACCENT_2)
-	right_btn.button_down.connect(func() -> void: moving_right = true)
-	right_btn.button_up.connect(func() -> void: moving_right = false)
-	controls.add_child(right_btn)
+	# Control táctil sin botones: la nave sigue al dedo a lo ancho y dispara
+	# sola mientras mantienes el dedo sobre el juego.
+	pad = GesturePad.attach(play_area)
 
 	var restart_btn := Button.new()
 	restart_btn.text = "🔁  Nueva partida"
@@ -206,15 +192,6 @@ func _build_ui() -> void:
 	UIKit.style_button(restart_btn, UIKit.COLOR_ACCENT_3)
 	restart_btn.pressed.connect(_new_game)
 	vbox.add_child(restart_btn)
-
-
-func _make_control_button(label: String, accent: Color, sz: Vector2 = Vector2(100, 84)) -> Button:
-	var btn := Button.new()
-	btn.text = label
-	btn.custom_minimum_size = sz
-	btn.add_theme_font_size_override("font_size", 26)
-	UIKit.style_button(btn, accent)
-	return btn
 
 
 func _build_starfield() -> void:
@@ -654,10 +631,17 @@ func _update_player(delta: float) -> void:
 	if player_captured:
 		return
 	var vx := 0.0
-	if moving_left and not moving_right:
+	if pad.is_down:
+		# Sigue al dedo, con velocidad máxima (como un joystick rápido).
+		var target: float = pad.current_pos.x - PLAYER_SIZE.x / 2.0
+		vx = clampf((target - player_x) / maxf(delta, 0.001), -PLAYER_SPEED * 1.8, PLAYER_SPEED * 1.8)
+		_on_shoot_pressed()
+	elif moving_left and not moving_right or Input.is_key_pressed(KEY_LEFT):
 		vx = -PLAYER_SPEED
-	elif moving_right and not moving_left:
+	elif moving_right and not moving_left or Input.is_key_pressed(KEY_RIGHT):
 		vx = PLAYER_SPEED
+	if Input.is_key_pressed(KEY_SPACE):
+		_on_shoot_pressed()
 	player_x = clamp(player_x + vx * delta, 0.0, PLAY_W - PLAYER_SIZE.x)
 	player_view.position = Vector2(player_x, PLAYER_Y)
 

@@ -30,11 +30,12 @@ const LINE_SCORE := [0, 100, 300, 500, 800]
 
 const HELP_TEXT := "Las piezas caen solas; acomódalas para completar filas horizontales sin dejar huecos.
 
-- ◀ / ▶ mueven la pieza.
-- 🔄 la rota.
-- ⬇ (mantén presionado) la hace caer más rápido.
-- ⏬ la deja caer al fondo de una vez.
-- 🔀 la guarda para usarla después (una vez por pieza): la primera vez saca la siguiente, luego intercambia.
+Se juega tocando el tablero, sin botones:
+- Arrastra el dedo a los lados para mover la pieza.
+- Toca para rotarla.
+- Arrastra hacia abajo para bajarla más rápido; desliza rápido hacia abajo para dejarla caer al fondo de una vez.
+- Desliza hacia arriba para guardarla y usarla después (una vez por pieza): la primera vez saca la siguiente, luego intercambia.
+(En teclado: flechas, ↑ rota, espacio la deja caer y C la guarda.)
 
 El contorno tenue debajo de la pieza muestra dónde caerá si usas ⏬. El panel \"Siguiente\" te enseña la próxima pieza con anticipación, y \"Guardada\" la que dejaste en reserva. Las piezas salen en \"bolsas\" de las 7 formas sin repetir, como en el Tetris moderno — nunca hay una sequía larga de una pieza.
 
@@ -57,6 +58,9 @@ var bag: Array = []
 var fall_timer: float = 0.0
 var fall_interval: float = 1.0
 var soft_dropping: bool = false
+var pad: GesturePad
+var drag_accum: Vector2 = Vector2.ZERO
+const DRAG_STEP := 34.0
 var score: int = 0
 var lines_cleared: int = 0
 var level: int = 1
@@ -188,35 +192,19 @@ func _build_ui() -> void:
 	status_label = UIKit.title_label("", 14, UIKit.COLOR_TEXT_DIM)
 	vbox.add_child(status_label)
 
-	# --- Controles: cluster de movimiento + cluster de acción ---
-	var controls_row := HBoxContainer.new()
-	controls_row.alignment = BoxContainer.ALIGNMENT_CENTER
-	controls_row.add_theme_constant_override("separation", 18)
-	vbox.add_child(controls_row)
-
-	var left_btn := _make_control_button("◀", UIKit.COLOR_ACCENT_2, Vector2(64, 64), 22)
-	left_btn.pressed.connect(_on_left_pressed)
-
-	var rotate_btn := _make_control_button("🔄", UIKit.COLOR_ACCENT_2, Vector2(64, 64), 22)
-	rotate_btn.pressed.connect(_try_rotate)
-
-	var right_btn := _make_control_button("▶", UIKit.COLOR_ACCENT_2, Vector2(64, 64), 22)
-	right_btn.pressed.connect(_on_right_pressed)
-
-	controls_row.add_child(_build_cluster("MOVER", [left_btn, rotate_btn, right_btn]))
-
-	var soft_btn := _make_control_button("⬇", UIKit.COLOR_ACCENT_2, Vector2(64, 64), 22)
-	soft_btn.button_down.connect(func() -> void: soft_dropping = true)
-	soft_btn.button_up.connect(func() -> void: soft_dropping = false)
-
-	var hard_btn := _make_control_button("⏬", UIKit.COLOR_ACCENT, Vector2(92, 72), 28)
-	hard_btn.pressed.connect(_hard_drop)
-
-	controls_row.add_child(_build_cluster("ACCIÓN", [soft_btn, hard_btn]))
-
-	var hold_btn := _make_control_button("🔀", UIKit.COLOR_TEXT_DIM, Vector2(64, 64), 24)
-	hold_btn.pressed.connect(_on_hold_pressed)
-	controls_row.add_child(_build_cluster("GUARDAR", [hold_btn]))
+	# --- Control táctil sin botones, sobre el tablero ---
+	# Arrastrar a los lados mueve la pieza (una columna por cada tramo que
+	# recorre el dedo), arrastrar hacia abajo la baja, deslizar rápido hacia
+	# abajo la deja caer, deslizar hacia arriba la guarda y tocar la rota.
+	pad = GesturePad.attach(board_margin)
+	pad.pressed.connect(func(_p: Vector2) -> void: drag_accum = Vector2.ZERO)
+	pad.dragged.connect(_on_drag)
+	pad.tapped.connect(func(_p: Vector2) -> void: _try_rotate())
+	pad.swiped.connect(func(d: Vector2i) -> void:
+		if d == Vector2i(0, 1):
+			_hard_drop()
+		elif d == Vector2i(0, -1):
+			_on_hold_pressed())
 
 	var restart_btn := Button.new()
 	restart_btn.text = "🔁  Nueva partida"
@@ -273,40 +261,6 @@ func _make_stat_chip(parent: Control, text: String, color: Color) -> Label:
 	var lbl := UIKit.title_label(text, 13, color)
 	m.add_child(lbl)
 	return lbl
-
-
-func _build_cluster(caption: String, buttons: Array) -> Control:
-	var col := VBoxContainer.new()
-	col.alignment = BoxContainer.ALIGNMENT_CENTER
-	col.add_theme_constant_override("separation", 6)
-	col.add_child(UIKit.title_label(caption, 10, UIKit.COLOR_TEXT_DIM))
-
-	var panel := PanelContainer.new()
-	panel.add_theme_stylebox_override("panel", UIKit.stylebox(UIKit.COLOR_PANEL, Color(1, 1, 1, 0.08), 16, 1))
-	col.add_child(panel)
-
-	var pad := MarginContainer.new()
-	for side: String in ["margin_left", "margin_right", "margin_top", "margin_bottom"]:
-		pad.add_theme_constant_override(side, 8)
-	panel.add_child(pad)
-
-	var row := HBoxContainer.new()
-	row.alignment = BoxContainer.ALIGNMENT_CENTER
-	row.add_theme_constant_override("separation", 8)
-	pad.add_child(row)
-	for b: Button in buttons:
-		row.add_child(b)
-
-	return col
-
-
-func _make_control_button(label: String, color: Color, size: Vector2, font_size: int) -> Button:
-	var btn := Button.new()
-	btn.text = label
-	btn.custom_minimum_size = size
-	btn.add_theme_font_size_override("font_size", font_size)
-	UIKit.style_button(btn, color)
-	return btn
 
 
 func _empty_row() -> Array:
@@ -422,6 +376,41 @@ func _spawn_piece() -> void:
 		_game_over()
 		return
 	_redraw_grid()
+
+
+func _on_drag(_pos: Vector2, _from_start: Vector2, step: Vector2) -> void:
+	if state != "playing":
+		return
+	drag_accum += step
+	while drag_accum.x >= DRAG_STEP:
+		drag_accum.x -= DRAG_STEP
+		_on_right_pressed()
+	while drag_accum.x <= -DRAG_STEP:
+		drag_accum.x += DRAG_STEP
+		_on_left_pressed()
+	drag_accum.y = maxf(drag_accum.y, 0.0)
+	while drag_accum.y >= DRAG_STEP:
+		drag_accum.y -= DRAG_STEP
+		if _try_move(0, 1):
+			score += 1  # caída suave: 1 punto por celda
+			_update_hud()
+			_redraw_grid()
+
+
+func _unhandled_key_input(event: InputEvent) -> void:
+	if not event.pressed or state != "playing":
+		return
+	match event.keycode:
+		KEY_LEFT: _on_left_pressed()
+		KEY_RIGHT: _on_right_pressed()
+		KEY_UP: _try_rotate()
+		KEY_SPACE: _hard_drop()
+		KEY_C: _on_hold_pressed()
+		KEY_DOWN:
+			if _try_move(0, 1):
+				score += 1
+				_update_hud()
+				_redraw_grid()
 
 
 func _on_hold_pressed() -> void:

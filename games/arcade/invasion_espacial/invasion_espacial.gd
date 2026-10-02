@@ -76,7 +76,7 @@ const TIMERS := {
 	"jefe_ancho": 2.5, "jefe_abanico": 8.0, "jefe_laser": 7.0, "jefe_granada": 5.0,
 }
 
-const HELP_TEXT := "Mueve la nave con ◀ ▶ (o flechas / A-D) y dispara con 🔫 (o espacio). Mantén presionado para disparo continuo. ⏸ (o P) pausa.
+const HELP_TEXT := "Pon el dedo sobre el juego y arrástralo: la nave lo sigue y dispara sola mientras lo mantengas abajo. Doble toque = pausa. (En teclado: flechas o A-D, espacio para disparar y P para pausa.)
 
 - Nivel 1: lluvia de asteroides. Nivel 2: naves enemigas que disparan. Nivel 4: planetas que se parten en asteroides. Nivel 6: ovnis en zigzag. Nivel 8: los asteroides se parten en meteoritos.
 - Lo que se escapa por abajo te resta la mitad de sus puntos.
@@ -95,7 +95,7 @@ var play_area: Control
 var score_label: Label
 var lives_label: Label
 var status_label: Label
-var pause_btn: Button
+var pad: GesturePad
 
 var stars: PackedVector2Array = PackedVector2Array()
 var timers: Dictionary = {}
@@ -243,31 +243,10 @@ func _build_ui() -> void:
 	play_area.draw.connect(_draw_play)
 	play_panel.add_child(play_area)
 
-	var controls := HBoxContainer.new()
-	controls.alignment = BoxContainer.ALIGNMENT_CENTER
-	controls.add_theme_constant_override("separation", 10)
-	vbox.add_child(controls)
-
-	var left_btn := _make_control_button("◀", UIKit.COLOR_ACCENT_2)
-	left_btn.button_down.connect(func() -> void: moving_left = true)
-	left_btn.button_up.connect(func() -> void: moving_left = false)
-	controls.add_child(left_btn)
-
-	var shoot_btn := _make_control_button("🔫", UIKit.COLOR_ACCENT, Vector2(118, 84))
-	shoot_btn.button_down.connect(func() -> void:
-		firing = true
-		fire_cooldown = 0.0)
-	shoot_btn.button_up.connect(func() -> void: firing = false)
-	controls.add_child(shoot_btn)
-
-	var right_btn := _make_control_button("▶", UIKit.COLOR_ACCENT_2)
-	right_btn.button_down.connect(func() -> void: moving_right = true)
-	right_btn.button_up.connect(func() -> void: moving_right = false)
-	controls.add_child(right_btn)
-
-	pause_btn = _make_control_button("⏸", UIKit.COLOR_ACCENT_3, Vector2(70, 84))
-	pause_btn.pressed.connect(_toggle_pause)
-	controls.add_child(pause_btn)
+	# Control táctil sin botones: la nave sigue al dedo y dispara sola
+	# mientras lo mantienes sobre el juego; doble toque = pausa.
+	pad = GesturePad.attach(play_area)
+	pad.double_tapped.connect(func(_p: Vector2) -> void: _toggle_pause())
 
 	var restart_btn := Button.new()
 	restart_btn.text = "🔁  Nueva partida"
@@ -278,16 +257,6 @@ func _build_ui() -> void:
 
 	for i in 120:
 		stars.append(Vector2(randf() * PLAY_W, randf() * PLAY_H))
-
-
-func _make_control_button(label: String, accent: Color, sz: Vector2 = Vector2(100, 84)) -> Button:
-	var btn := Button.new()
-	btn.text = label
-	btn.custom_minimum_size = sz
-	btn.add_theme_font_size_override("font_size", 26)
-	btn.focus_mode = Control.FOCUS_NONE  # que la barra espaciadora no "presione" el botón con foco
-	UIKit.style_button(btn, accent)
-	return btn
 
 
 ## _input (no _unhandled_input): así la barra espaciadora se atiende antes
@@ -311,11 +280,9 @@ func _input(event: InputEvent) -> void:
 func _toggle_pause() -> void:
 	if state == "playing":
 		state = "paused"
-		pause_btn.text = "▶"
 		music_player.stream_paused = true
 	elif state == "paused":
 		state = "playing"
-		pause_btn.text = "⏸"
 		music_player.stream_paused = false
 	play_area.queue_redraw()
 
@@ -333,7 +300,6 @@ func _new_game() -> void:
 	jefe_activo = false
 	jefe = {}
 	state = "playing"
-	pause_btn.text = "⏸"
 	nave_x = PLAY_W / 2.0 - _size("spaceship").x / 2.0
 	nave_y = PLAY_H - _size("spaceship").y - 10.0
 	for k: String in TIMERS:
@@ -408,13 +374,16 @@ func _step(delta: float) -> void:
 func _mover_jugador(delta: float) -> void:
 	var left: bool = moving_left or Input.is_key_pressed(KEY_LEFT) or Input.is_key_pressed(KEY_A)
 	var right: bool = moving_right or Input.is_key_pressed(KEY_RIGHT) or Input.is_key_pressed(KEY_D)
-	if left and not right:
+	if pad.is_down:
+		var target: float = pad.current_pos.x - _size("spaceship").x / 2.0
+		nave_x += clampf(target - nave_x, -VEL_NAVE * 1.8 * delta, VEL_NAVE * 1.8 * delta)
+	elif left and not right:
 		nave_x -= VEL_NAVE * delta
 	elif right and not left:
 		nave_x += VEL_NAVE * delta
 	nave_x = clampf(nave_x, 0.0, PLAY_W - _size("spaceship").x)
 	fire_cooldown -= delta
-	if firing and fire_cooldown <= 0.0:
+	if (firing or pad.is_down) and fire_cooldown <= 0.0:
 		fire_cooldown = AUTOFIRE_INTERVAL
 		var bs: Vector2 = _size("ship_bullet")
 		_add(balas, "ship_bullet", Vector2(nave_x + _size("spaceship").x / 2.0 - bs.x / 2.0, nave_y - bs.y * 0.5), Vector2(0, -VEL_BALA))

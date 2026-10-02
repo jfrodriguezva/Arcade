@@ -37,7 +37,7 @@ const POWERUP_COLOR := {
 	"bomb_up": UIKit.COLOR_DANGER, "fire_up": UIKit.COLOR_ACCENT_3, "speed_up": UIKit.COLOR_ACCENT_2,
 }
 
-const HELP_TEXT := "Muévete con las flechas. Toca 💣 para colocar una bomba en tu celda.
+const HELP_TEXT := "Se juega tocando el tablero, sin botones: pon el dedo y arrástralo hacia donde quieras caminar (mientras lo mantengas, sigues caminando); toca para poner una bomba en tu celda. (En teclado: flechas y espacio.)
 
 La bomba explota en cruz tras un par de segundos, destruyendo bloques claros (blandos) y a cualquiera atrapado en la explosión — incluido tú, así que aléjate a tiempo. Los pilares oscuros son indestructibles. Si una explosión alcanza otra bomba ya colocada, la detona también, en cadena.
 
@@ -86,7 +86,9 @@ var lives_label: Label
 var level_label: Label
 var powerup_label: Label
 var status_label: Label
-var bomb_btn: Button
+var bomb_btn: Button  # ya no hay botón en pantalla (queda en null)
+var pad: GesturePad
+const JOYSTICK_DEADZONE := 22.0
 var anim_time: float = 0.0
 
 
@@ -168,54 +170,16 @@ func _build_ui() -> void:
 	player_view.setup("bomber", UIKit.COLOR_ACCENT_3, UIKit.COLOR_ACCENT_2)
 	play_area.add_child(player_view)
 
-	# --- Controles: cluster de movimiento (izquierda) + botón de bomba
-	# prominente (derecha), pensado para pulgares en modo retrato.
-	var controls_row := HBoxContainer.new()
-	controls_row.alignment = BoxContainer.ALIGNMENT_CENTER
-	controls_row.add_theme_constant_override("separation", 40)
-	vbox.add_child(controls_row)
-
-	var dpad_box := VBoxContainer.new()
-	dpad_box.alignment = BoxContainer.ALIGNMENT_CENTER
-	dpad_box.add_theme_constant_override("separation", 8)
-	controls_row.add_child(dpad_box)
-
-	var dpad_row1 := HBoxContainer.new()
-	dpad_row1.alignment = BoxContainer.ALIGNMENT_CENTER
-	dpad_box.add_child(dpad_row1)
-	var up_btn := _make_dir_button("▲")
-	up_btn.button_down.connect(func() -> void: _set_dir(Vector2i(0, -1)))
-	up_btn.button_up.connect(func() -> void: _clear_dir(Vector2i(0, -1)))
-	dpad_row1.add_child(up_btn)
-
-	var dpad_row2 := HBoxContainer.new()
-	dpad_row2.alignment = BoxContainer.ALIGNMENT_CENTER
-	dpad_row2.add_theme_constant_override("separation", 80)
-	dpad_box.add_child(dpad_row2)
-	var left_btn := _make_dir_button("◀")
-	left_btn.button_down.connect(func() -> void: _set_dir(Vector2i(-1, 0)))
-	left_btn.button_up.connect(func() -> void: _clear_dir(Vector2i(-1, 0)))
-	dpad_row2.add_child(left_btn)
-	var right_btn := _make_dir_button("▶")
-	right_btn.button_down.connect(func() -> void: _set_dir(Vector2i(1, 0)))
-	right_btn.button_up.connect(func() -> void: _clear_dir(Vector2i(1, 0)))
-	dpad_row2.add_child(right_btn)
-
-	var dpad_row3 := HBoxContainer.new()
-	dpad_row3.alignment = BoxContainer.ALIGNMENT_CENTER
-	dpad_box.add_child(dpad_row3)
-	var down_btn := _make_dir_button("▼")
-	down_btn.button_down.connect(func() -> void: _set_dir(Vector2i(0, 1)))
-	down_btn.button_up.connect(func() -> void: _clear_dir(Vector2i(0, 1)))
-	dpad_row3.add_child(down_btn)
-
-	bomb_btn = Button.new()
-	bomb_btn.text = "💣"
-	bomb_btn.custom_minimum_size = Vector2(100, 100)
-	bomb_btn.add_theme_font_size_override("font_size", 36)
-	UIKit.style_button(bomb_btn, UIKit.COLOR_DANGER, 50)
-	bomb_btn.pressed.connect(_on_bomb_pressed)
-	controls_row.add_child(bomb_btn)
+	# --- Control táctil sin botones: el punto donde pones el dedo es el
+	# centro de un joystick invisible -- arrastra hacia un lado para
+	# caminar en esa dirección (mientras sigas tocando) y toca para poner
+	# una bomba.
+	pad = GesturePad.attach(play_area)
+	pad.dragged.connect(func(_p: Vector2, from_start: Vector2, _s: Vector2) -> void:
+		if from_start.length() >= JOYSTICK_DEADZONE:
+			_set_dir(GesturePad._dir_of(from_start)))
+	pad.released.connect(func(_p: Vector2) -> void: current_dir = Vector2i.ZERO)
+	pad.tapped.connect(func(_p: Vector2) -> void: _on_bomb_pressed())
 
 	var restart_btn := Button.new()
 	restart_btn.text = "🔁  Nueva partida"
@@ -223,15 +187,6 @@ func _build_ui() -> void:
 	UIKit.style_button(restart_btn, UIKit.COLOR_ACCENT_3)
 	restart_btn.pressed.connect(_new_game)
 	vbox.add_child(restart_btn)
-
-
-func _make_dir_button(label: String) -> Button:
-	var btn := Button.new()
-	btn.text = label
-	btn.custom_minimum_size = Vector2(74, 64)
-	btn.add_theme_font_size_override("font_size", 22)
-	UIKit.style_button(btn, UIKit.COLOR_ACCENT_2)
-	return btn
 
 
 func _cell_pos(cell: Vector2i, node_size: Vector2) -> Vector2:
@@ -724,3 +679,14 @@ func _record_result(won: bool) -> void:
 	stats[key] = stats.get(key, 0) + 1
 	stats["best_score"] = max(stats.get("best_score", 0), score)
 	SaveManager.set_game_data(GAME_ID, stats)
+
+
+func _unhandled_key_input(event: InputEvent) -> void:
+	var dirs := {KEY_UP: Vector2i(0, -1), KEY_DOWN: Vector2i(0, 1), KEY_LEFT: Vector2i(-1, 0), KEY_RIGHT: Vector2i(1, 0)}
+	if dirs.has(event.keycode):
+		if event.pressed:
+			_set_dir(dirs[event.keycode])
+		else:
+			_clear_dir(dirs[event.keycode])
+	elif event.keycode == KEY_SPACE and event.pressed and not event.echo:
+		_on_bomb_pressed()
