@@ -554,7 +554,8 @@ func _draw_play() -> void:
 	# Cielo en degradado (franjas) y paisaje del escenario.
 	for i in range(30):
 		var t: float = float(i) / 29.0
-		ca.draw_rect(Rect2(0, t * FLOOR_Y, PLAY_W, FLOOR_Y / 30.0 + 1.0), pal[0].lerp(pal[1], t))
+		var y0: float = floorf(i * FLOOR_Y / 30.0)
+		ca.draw_rect(Rect2(0, y0, PLAY_W, floorf((i + 1) * FLOOR_Y / 30.0) - y0 + 1.0), pal[0].lerp(pal[1], t), true, -1.0, false)
 	_draw_landmark(st["scene"], pal)
 	ca.draw_rect(Rect2(0, FLOOR_Y, PLAY_W, PLAY_H - FLOOR_Y), pal[3].darkened(0.2))
 	ca.draw_rect(Rect2(0, FLOOR_Y, PLAY_W, 5), pal[3].lightened(0.2))
