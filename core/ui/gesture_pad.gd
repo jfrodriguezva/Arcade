@@ -96,6 +96,17 @@ func _process(_delta: float) -> void:
 		swiped.emit(_dir_of(delta))
 
 
+## Segundos que lleva el dedo abajo (0 si no está tocando).
+func held_time() -> float:
+	return _now() - _down_time if is_down else 0.0
+
+
+## ¿El dedo está "arrastrando" (se movió o lleva rato abajo), en vez de
+## ser un toque corto? Útil cuando tocar y arrastrar hacen cosas distintas.
+func is_holding() -> bool:
+	return is_down and (moved_far or held_time() > TAP_MAX_TIME)
+
+
 static func _dir_of(v: Vector2) -> Vector2i:
 	if absf(v.x) > absf(v.y):
 		return Vector2i(1 if v.x > 0.0 else -1, 0)

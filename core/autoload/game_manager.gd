@@ -160,6 +160,14 @@ var games: Array[Dictionary] = [
 		"enabled": true,
 	},
 	{
+		"id": "dulce_fiesta",
+		"title": "Dulce Fiesta",
+		"icon": "🍬",
+		"category": "mesa",
+		"scene": "res://games/board/dulce_fiesta/dulce_fiesta.tscn",
+		"enabled": true,
+	},
+	{
 		"id": "sudoku",
 		"title": "Sudoku",
 		"icon": "🔢",
@@ -244,20 +252,20 @@ var games: Array[Dictionary] = [
 		"enabled": true,
 	},
 	{
-		"id": "gunslinger",
-		"title": "Pistoleros del Ocaso",
-		"icon": "🤠",
+		"id": "burbujas",
+		"title": "Lazo y Burbujas",
+		"icon": "🎈",
 		"category": "arcade",
-		"scene": "res://games/arcade/gunslinger/gunslinger.tscn",
+		"scene": "res://games/arcade/burbujas/burbujas.tscn",
 		"enabled": true,
 	},
 	# --- Arcade: reflejos --------------------------------------------------
 	{
-		"id": "topo",
-		"title": "Atrapa al Topo",
-		"icon": "🐹",
+		"id": "dino_runner",
+		"title": "Dino Corredor",
+		"icon": "🦖",
 		"category": "arcade",
-		"scene": "res://games/arcade/topo/topo.tscn",
+		"scene": "res://games/arcade/dino_runner/dino_runner.tscn",
 		"enabled": true,
 	},
 ]
