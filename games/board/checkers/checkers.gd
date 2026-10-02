@@ -1,7 +1,9 @@
 extends Control
-## Damas clásicas contra la máquina. Captura opcional (no es obligatorio
-## comer si puedes), pero si empiezas una captura y puedes encadenar otra
-## con la misma ficha, se te permite seguir de inmediato.
+## Damas clásicas contra la máquina, con "bobas" (soplar): si en tu turno
+## podías comer y no comiste (con ninguna ficha), pierdes la ficha que
+## podía comer. Si empiezas una captura y puedes encadenar otra con la
+## misma ficha, puedes seguir de inmediato. Empate si la misma posición se
+## repite 3 veces o si pasan 40 jugadas por bando sin comer ni mover peones.
 
 const GAME_ID := "checkers"
 const SIZE := 8
@@ -14,8 +16,9 @@ const HELP_TEXT := "Juegas con las fichas rosas (abajo) contra la máquina (fich
 - Si hay una ficha rival justo en diagonal y la casilla siguiente está vacía, salta sobre ella para comerla.
 - Si después de comer puedes volver a comer con la MISMA ficha, puedes seguir saltando; toca cualquier otra casilla para terminar tu turno.
 - Si llegas al otro extremo del tablero, tu ficha se corona Reina (♛) y se mueve en diagonal hacia ambos lados.
+- BOBAS: si en tu turno podías comer y no comiste con ninguna ficha, te \"soplan\": pierdes la ficha que podía comer (si moviste esa misma ficha, se pierde donde quedó). Lo mismo aplica a la máquina.
 
-Gana quien deje al rival sin fichas o sin movimientos posibles."
+Gana quien deje al rival sin fichas o sin movimientos posibles. Es empate si la misma posición se repite 3 veces, o si pasan 40 jugadas de cada lado sin comer ni mover un peón."
 
 var board: Array = [] # board[y][x] = null o {"owner":"player"/"bot", "king":bool}
 var cell_buttons: Array = []
@@ -31,6 +34,18 @@ var chain_active: bool = false
 ## Se incrementa en cada partida nueva; el turno de la máquina (que espera
 ## con timers) lo revisa para no jugar sobre una partida que ya se reinició.
 var game_session: int = 0
+## Bobas: fichas que podían comer al empezar el turno, y si ya comió.
+var turn_capturers: Array = []
+var turn_made_capture: bool = false
+var turn_from: Vector2i = Vector2i(-1, -1)
+var turn_to: Vector2i = Vector2i(-1, -1)
+var turn_moved_man: bool = false
+## Empates: cuántas veces se ha visto cada posición (con el turno), y
+## medias jugadas seguidas sin comer ni mover un peón.
+var position_history: Dictionary = {}
+var quiet_plies: int = 0
+const DRAW_REPETITIONS := 3
+const DRAW_QUIET_PLIES := 80
 
 var status_label: Label
 
@@ -63,6 +78,8 @@ func _build_ui() -> void:
 	UIKit.build_toolbar(vbox, self, "Damas", HELP_TEXT)
 
 	status_label = UIKit.title_label("", 22, UIKit.COLOR_TEXT)
+	status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	status_label.custom_minimum_size = Vector2(560, 0)
 	vbox.add_child(status_label)
 
 	var panel := PanelContainer.new()
@@ -133,11 +150,92 @@ func _new_game() -> void:
 	game_session += 1
 	current_turn = "player"
 	game_over = false
+	position_history.clear()
+	quiet_plies = 0
+	_begin_turn_tracking("player")
 	_update_turn_status()
 	_redraw_all()
 
 
-func _update_turn_status() -> void:
+# --- Bobas y empates --------------------------------------------------------
+func _begin_turn_tracking(owner: String) -> void:
+	turn_capturers.clear()
+	turn_made_capture = false
+	turn_from = Vector2i(-1, -1)
+	turn_to = Vector2i(-1, -1)
+	for y in range(SIZE):
+		for x in range(SIZE):
+			var p: Variant = board[y][x]
+			if p != null and p["owner"] == owner and _has_capture_from(x, y, owner):
+				turn_capturers.append(Vector2i(x, y))
+	var key: String = _position_key(owner)
+	position_history[key] = position_history.get(key, 0) + 1
+
+
+func _position_key(side_to_move: String) -> String:
+	return str(Array(_board_to_packed())) + side_to_move
+
+
+## Al terminar el turno de `owner`: si podía comer y no comió, lo soplan.
+## Devuelve true si hubo boba.
+func _apply_huff(owner: String) -> bool:
+	if turn_made_capture or turn_capturers.is_empty():
+		return false
+	var victim: Vector2i = turn_to if turn_capturers.has(turn_from) else turn_capturers[0]
+	var p: Variant = board[victim.y][victim.x]
+	if p == null or p["owner"] != owner:
+		return false
+	board[victim.y][victim.x] = null
+	UIKit.pulse(cell_buttons[victim.y][victim.x])
+	AudioManager.play_alert()
+	var who: String = "Te soplaron" if (mode == "pve" and owner == "player") else ("Soplaste a la máquina" if mode == "pve" else "¡Soplada!")
+	status_label.text = "%s: había que comer. Se pierde la ficha en %s" % [who, _square_name(victim)]
+	status_label.add_theme_color_override("font_color", UIKit.COLOR_DANGER)
+	return true
+
+
+func _square_name(c: Vector2i) -> String:
+	return "%s%d" % ["abcdefgh"[c.x], SIZE - c.y]
+
+
+## Actualiza el contador de jugadas "tranquilas" después de un turno.
+func _track_progress(moved_piece_was_man: bool) -> void:
+	if turn_made_capture or moved_piece_was_man:
+		quiet_plies = 0
+	else:
+		quiet_plies += 1
+
+
+## Empate por repetición (3 veces) o por 40 jugadas por bando sin comer
+## ni mover peones. Se revisa con el turno ya cambiado.
+func _check_draw() -> bool:
+	var reason := ""
+	if position_history.get(_position_key(current_turn), 0) >= DRAW_REPETITIONS:
+		reason = "la misma posición se repitió 3 veces"
+	elif quiet_plies >= DRAW_QUIET_PLIES:
+		reason = "40 jugadas por bando sin comer ni mover peones"
+	if reason == "":
+		return false
+	game_over = true
+	status_label.text = "Empate: %s" % reason
+	status_label.add_theme_color_override("font_color", UIKit.COLOR_TEXT_DIM)
+	if mode == "pve":
+		var stats: Dictionary = SaveManager.get_game_data(GAME_ID)
+		stats["draws"] = stats.get("draws", 0) + 1
+		SaveManager.set_game_data(GAME_ID, stats)
+	return true
+
+
+func _update_turn_status(keep_message: bool = false) -> void:
+	var prefix: String = (status_label.text + "
+") if keep_message else ""
+	_set_turn_text()
+	if keep_message:
+		status_label.text = prefix + status_label.text
+		status_label.add_theme_color_override("font_color", UIKit.COLOR_DANGER)
+
+
+func _set_turn_text() -> void:
 	if mode == "pve":
 		if current_turn == "player":
 			status_label.text = "Tu turno"
@@ -347,6 +445,7 @@ func _on_cell_pressed(x: int, y: int) -> void:
 	# turno, un regalo enorme contra la máquina.
 	if chain_active:
 		if _try_move(selected.x, selected.y, x, y, owner) == "capture":
+			turn_to = Vector2i(x, y)
 			if _has_capture_from(x, y, owner):
 				selected = Vector2i(x, y)
 				_redraw_all()
@@ -366,11 +465,18 @@ func _on_cell_pressed(x: int, y: int) -> void:
 		_redraw_all()
 		return
 
+	var was_man: bool = not board[selected.y][selected.x]["king"]
+	var from: Vector2i = selected
 	var result: String = _try_move(selected.x, selected.y, x, y, owner)
 	if result == "invalid":
 		selected = Vector2i(-1, -1)
 		_redraw_all()
 		return
+	turn_from = from
+	turn_to = Vector2i(x, y)
+	turn_moved_man = was_man
+	if result == "capture":
+		turn_made_capture = true
 
 	if result == "capture" and _has_capture_from(x, y, owner):
 		selected = Vector2i(x, y)
@@ -384,13 +490,18 @@ func _on_cell_pressed(x: int, y: int) -> void:
 
 func _end_player_turn(owner: String) -> void:
 	selected = Vector2i(-1, -1)
+	var huffed: bool = _apply_huff(owner)
+	_track_progress(turn_moved_man)
 	_redraw_all()
 
 	if _check_win():
 		return
 
 	current_turn = "bot" if owner == "player" else "player"
-	_update_turn_status()
+	_begin_turn_tracking(current_turn)
+	if _check_draw():
+		return
+	_update_turn_status(huffed)
 
 	if mode == "pve" and current_turn == "bot":
 		var session: int = game_session
@@ -448,6 +559,9 @@ func _bot_turn() -> void:
 	# -- antes, tras cada salto se volvía a elegir jugada entre todas las
 	# fichas y podía "continuar la cadena" moviendo otra distinta.
 	var path: Array = move["path"]
+	turn_from = path[0]
+	turn_to = path[path.size() - 1]
+	turn_moved_man = not board[path[0].y][path[0].x]["king"]
 	for i in range(1, path.size()):
 		if i > 1:
 			await get_tree().create_timer(0.4).timeout
@@ -455,14 +569,21 @@ func _bot_turn() -> void:
 				return
 		var a: Vector2i = path[i - 1]
 		var c: Vector2i = path[i]
-		_try_move(a.x, a.y, c.x, c.y, "bot")
+		if _try_move(a.x, a.y, c.x, c.y, "bot") == "capture":
+			turn_made_capture = true
 		_redraw_all()
 
+	var huffed: bool = _apply_huff("bot")
+	_track_progress(turn_moved_man)
+	_redraw_all()
 	if _check_win():
 		return
 
 	current_turn = "player"
-	_update_turn_status()
+	_begin_turn_tracking("player")
+	if _check_draw():
+		return
+	_update_turn_status(huffed)
 
 
 # --- Motor de IA (Medio/Difícil) ------------------------------------------
@@ -531,6 +652,17 @@ func _eng_moves(b: PackedInt32Array, side: int) -> Array:
 			var ny: int = y + d.y
 			if nx >= 0 and nx < SIZE and ny >= 0 and ny < SIZE and b[ny * SIZE + nx] == 0:
 				simple.append([PackedInt32Array([idx, ny * SIZE + nx]), PackedInt32Array()])
+	# Bobas: si había captura y se juega una jugada simple, se pierde la
+	# ficha que podía comer (la que se movió, donde quedó; si no, la
+	# primera que podía comer). Así la IA sabe que no comer le cuesta.
+	if not captures.is_empty():
+		var capturers := {}
+		for c: Array in captures:
+			capturers[c[0][0]] = true
+		var first_capturer: int = captures[0][0][0]
+		for m: Array in simple:
+			var from: int = m[0][0]
+			m.append(m[0][1] if capturers.has(from) else first_capturer)
 	# Capturas primero y las más largas antes: mejora mucho la poda alfa-beta.
 	captures.sort_custom(func(a: Array, c: Array) -> bool: return a[1].size() > c[1].size())
 	captures.append_array(simple)
@@ -589,6 +721,10 @@ func _eng_make(b: PackedInt32Array, m: Array) -> PackedInt32Array:
 	elif v == -1 and ty == 0:
 		v = -2
 	b[to] = v
+	if m.size() > 2:
+		var pen: int = m[2]
+		undo.append(b[pen])
+		b[pen] = 0  # boba: se pierde la ficha que podía comer
 	return undo
 
 
@@ -599,6 +735,8 @@ func _eng_unmake(b: PackedInt32Array, m: Array, undo: PackedInt32Array) -> void:
 	b[path[0]] = undo[0]
 	for i in range(caps.size()):
 		b[caps[i]] = undo[i + 1]
+	if m.size() > 2 and m[2] != path[path.size() - 1]:
+		b[m[2]] = undo[undo.size() - 1]
 
 
 ## Evaluación desde el punto de vista de la máquina (positivo = le conviene).
@@ -696,6 +834,11 @@ func _eng_search(b: PackedInt32Array, moves: Array, max_depth: int, time_ms: int
 		for m: Array in moves:
 			var undo: PackedInt32Array = _eng_make(b, m)
 			var sc: float = -_negamax(b, depth - 1, -INF, -alpha, PLAYER, 1)
+			# Volver a una posición que ya se vio en la partida cuenta como
+			# empate: si va ganando, la evita (antes podía ir y venir con la
+			# misma ficha sin fin); si va perdiendo, la busca.
+			if position_history.get(str(Array(b)) + "player", 0) >= 1:
+				sc = 0.0
 			_eng_unmake(b, m, undo)
 			if _aborted:
 				break
