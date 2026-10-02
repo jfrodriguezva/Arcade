@@ -252,6 +252,14 @@ var games: Array[Dictionary] = [
 		"enabled": true,
 	},
 	{
+		"id": "ecos",
+		"title": "Ecos",
+		"icon": "⏳",
+		"category": "arcade",
+		"scene": "res://games/arcade/ecos/ecos.tscn",
+		"enabled": true,
+	},
+	{
 		"id": "burbujas",
 		"title": "Lazo y Burbujas",
 		"icon": "🎈",
