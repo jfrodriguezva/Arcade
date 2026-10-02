@@ -4,10 +4,13 @@
 // Incrementing CACHE_VERSION will kick off the install event and force
 // previously cached resources to be updated from the network.
 /** @type {string} */
-const CACHE_VERSION = '1790965048|3504563';
+const CACHE_VERSION = '1790967760|3407880';
 /** @type {string} */
 const CACHE_PREFIX = 'Arcade Platform-sw-cache-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
+// Motor en caché propio (nombre = su contenido): sobrevive a las actualizaciones del juego.
+const ENGINE_CACHE = CACHE_PREFIX + 'engine-fc74679e3b97f768';
+function cacheFor(name) { return caches.open(name === 'index.wasm' ? ENGINE_CACHE : CACHE_NAME); }
 /** @type {string} */
 const OFFLINE_URL = 'index.offline.html';
 /** @type {boolean} */
@@ -28,7 +31,7 @@ self.addEventListener('activate', (event) => {
 	event.waitUntil(caches.keys().then(
 		function (keys) {
 			// Remove old caches.
-			return Promise.all(keys.filter((key) => key.startsWith(CACHE_PREFIX) && key !== CACHE_NAME).map((key) => caches.delete(key)));
+			return Promise.all(keys.filter((key) => key.startsWith(CACHE_PREFIX) && key !== CACHE_NAME && key !== ENGINE_CACHE).map((key) => caches.delete(key)));
 		}
 	).then(function () {
 		// Enable navigation preload if available.
@@ -103,11 +106,11 @@ self.addEventListener(
 		if (isNavigate || isCacheable) {
 			event.respondWith((async () => {
 				// Try to use cache first
-				const cache = await caches.open(CACHE_NAME);
+				const cache = await cacheFor(local);
 				if (isNavigate) {
 					// Check if we have full cache during HTML page request.
 					/** @type {Response[]} */
-					const fullCache = await Promise.all(FULL_CACHE.map((name) => cache.match(name)));
+					const fullCache = await Promise.all(FULL_CACHE.map((name) => cacheFor(name).then((c) => c.match(name))));
 					const missing = fullCache.some((v) => v === undefined);
 					if (missing) {
 						try {
