@@ -118,8 +118,10 @@ var status_label: Label
 
 
 func _ready() -> void:
+	AudioManager.play_music("espacio")
 	_build_ui()
 	_new_game()
+	TouchHint.show_once(self, GAME_ID, [["👆", "Mantén el dedo sobre el juego y arrástralo: la nave lo sigue y dispara sola."]])
 
 
 func _build_ui() -> void:
@@ -373,6 +375,7 @@ func _on_shoot_pressed() -> void:
 	if state != "playing" or shoot_cooldown > 0.0 or player_captured:
 		return
 	shoot_cooldown = SHOOT_COOLDOWN
+	AudioManager.play_laser()
 	_fire_bullet_from(player_x + PLAYER_SIZE.x / 2.0 - 4.0)
 	if not captured_fighter.is_empty() and captured_fighter.get("active", false):
 		var cap_view: EntitySprite = captured_fighter["view"]
@@ -797,6 +800,7 @@ func _check_dive_collisions() -> void:
 
 
 func _remove_enemy(e: Dictionary, by_bullet: bool) -> void:
+	AudioManager.vibrate(15)
 	if by_bullet and in_challenge:
 		score += CHALLENGE_HIT_POINTS
 		challenge_hits += 1
@@ -838,6 +842,7 @@ func _all_enemies_cleared() -> bool:
 
 
 func _lose_life() -> void:
+	AudioManager.vibrate(200)
 	lives -= 1
 	_update_hud()
 	if not captured_fighter.is_empty():

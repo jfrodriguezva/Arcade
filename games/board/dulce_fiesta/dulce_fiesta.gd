@@ -97,10 +97,12 @@ var next_btn: Button
 
 
 func _ready() -> void:
+	AudioManager.play_music("dulce")
 	unlocked = int(SaveManager.get_game_data(GAME_ID).get("unlocked", 1))
 	level_idx = clampi(unlocked - 1, 0, LEVELS.size() - 1)
 	_build_ui()
 	_start_level()
+	TouchHint.show_once(self, GAME_ID, [["↔", "Desliza un dulce sobre su vecino para intercambiarlos."]])
 
 
 func _build_ui() -> void:
@@ -474,6 +476,7 @@ func _find_matches() -> Array:
 ## Elimina las corridas, crea especiales y dispara los especiales que
 ## estallen (en cadena).
 func _resolve(runs: Array, a: Vector2i, b: Vector2i) -> void:
+	AudioManager.vibrate(12 + 8 * mini(cascade, 4))
 	var to_clear: Dictionary = {}
 	var creations: Array = []  # [celda, color, especial]
 	var used: Dictionary = {}
@@ -525,7 +528,7 @@ func _resolve(runs: Array, a: Vector2i, b: Vector2i) -> void:
 		grid[cell.y][cell.x] = _new_candy(cr[1], old["pos"], cr[2])
 	if cascade >= 3:
 		status_label.text = ["", "", "", "¡Dulce!", "¡Delicioso!", "¡Divino!", "¡Increíble!"][mini(cascade, 6)]
-	AudioManager.play_place()
+	AudioManager.play_pop() if cascade < 2 else AudioManager.play_coin()
 	phase = "clearing"
 	phase_t = CLEAR_TIME
 	_update_hud()

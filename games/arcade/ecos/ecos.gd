@@ -190,10 +190,12 @@ var next_btn: Button
 
 
 func _ready() -> void:
+	AudioManager.play_music("misterio")
 	unlocked = int(SaveManager.get_game_data(GAME_ID).get("unlocked", 1))
 	level_idx = clampi(unlocked - 1, 0, LEVELS.size() - 1)
 	_build_ui()
 	_load_level()
+	TouchHint.show_once(self, GAME_ID, [["↔", "Arrastra: muévete (donde pones el dedo es el centro del joystick)."], ["👆", "Toca: termina el intento ahí. Tu eco se quedará en ese lugar."]])
 
 
 func _build_ui() -> void:
@@ -571,6 +573,7 @@ func _fail(msg: String) -> void:
 
 ## Termina el intento: se guarda como eco (si quedan) y empieza otro ciclo.
 func _end_attempt() -> void:
+	AudioManager.vibrate(30)
 	if state != "playing" or recording.size() < 2:
 		return
 	var lv: Dictionary = LEVELS[level_idx]

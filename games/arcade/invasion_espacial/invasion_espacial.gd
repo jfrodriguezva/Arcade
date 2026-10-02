@@ -139,6 +139,7 @@ func _ready() -> void:
 	_load_assets()
 	_build_ui()
 	_new_game()
+	TouchHint.show_once(self, GAME_ID, [["👆", "Mantén el dedo y arrástralo: la nave lo sigue y dispara sola."], ["👆👆", "Doble toque: pausa."]])
 
 
 func _load_assets() -> void:
@@ -163,10 +164,34 @@ func _load_assets() -> void:
 		add_child(p)
 		sfx_players.append(p)
 	music_player = AudioStreamPlayer.new()
-	var music: AudioStreamMP3 = load(A + "sonidos/musica_fondo.mp3")
-	music.loop = true
-	music_player.stream = music
 	add_child(music_player)
+	_load_music()
+
+
+## La música pesa 3.6 MB: en la versión web NO va dentro del paquete que se
+## descarga al abrir la plataforma (está excluida del export y se publica
+## como archivo aparte, ver tools/postexport_web.py); se pide hasta que
+## entras a este juego y empieza a sonar en cuanto llega.
+func _load_music() -> void:
+	if not OS.has_feature("web"):
+		var music: AudioStreamMP3 = load(A + "sonidos/musica_fondo.mp3")
+		music.loop = true
+		music_player.stream = music
+		return
+	var http := HTTPRequest.new()
+	add_child(http)
+	http.request_completed.connect(func(result: int, code: int, _h: PackedStringArray, body: PackedByteArray) -> void:
+		http.queue_free()
+		if result != HTTPRequest.RESULT_SUCCESS or code != 200 or body.is_empty():
+			return  # sin música (p. ej. sin internet); el juego sigue igual
+		var mp3 := AudioStreamMP3.new()
+		mp3.data = body
+		mp3.loop = true
+		music_player.stream = mp3
+		if state == "playing":
+			_start_music())
+	var base: String = str(JavaScriptBridge.eval("window.location.href.split('?')[0].replace(/[^/]*$/, '')"))
+	http.request(base + "musica_fondo.mp3")
 
 
 func _play_sfx(name: String) -> void:
@@ -184,6 +209,8 @@ func _play_sfx(name: String) -> void:
 
 
 func _start_music() -> void:
+	if music_player.stream == null:
+		return  # todavía descargando (web)
 	var vol: float = float(SettingsManager.get_value("music_volume", 0.8)) * 0.25
 	if vol <= 0.0:
 		music_player.stop()
@@ -601,6 +628,7 @@ func _colision_balas() -> void:
 ## contenido, y dos grupos vacíos resultaban "iguales" (un asteroide se
 ## trataba como planeta y soltaba fragmentos).
 func _on_destroyed(grupo: String, obj: Dictionary) -> void:
+	AudioManager.vibrate(15)
 	var puntos := 0
 	var center: Vector2 = obj["pos"] + obj["size"] / 2.0
 	if grupo == "planetas":
@@ -679,6 +707,7 @@ func _colision_jugador() -> void:
 
 
 func _golpe_jugador(dano: int) -> void:
+	AudioManager.vibrate(200)
 	_play_sfx("explosion")
 	vidas -= dano
 	flash_time = 0.25

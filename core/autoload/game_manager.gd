@@ -298,9 +298,18 @@ func go_to_game(id: String) -> void:
 		push_error("Juego no encontrado: %s" % id)
 		return
 	current_game_id = id
+	AudioManager.stop_music()  # cada juego pone la suya
+	# "Seguir jugando" del menú: los últimos juegos abiertos, sin repetir.
+	var hub: Dictionary = SaveManager.get_game_data("_hub")
+	var recent: Array = hub.get("recent", [])
+	recent.erase(id)
+	recent.push_front(id)
+	hub["recent"] = recent.slice(0, 4)
+	SaveManager.set_game_data("_hub", hub)
 	get_tree().change_scene_to_file(game["scene"])
 
 
 func go_to_hub() -> void:
+	AudioManager.stop_music()
 	current_game_id = ""
 	get_tree().change_scene_to_file("res://core/scenes/hub.tscn")

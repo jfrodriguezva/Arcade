@@ -164,8 +164,10 @@ var status_label: Label
 
 
 func _ready() -> void:
+	AudioManager.play_music("arcade")
 	_build_ui()
 	_new_game()
+	TouchHint.show_once(self, GAME_ID, [["↔", "Desliza hacia donde quieras ir. El muncher sigue solo hasta la pared y toma el giro en cuanto puede."]])
 
 
 func _build_ui() -> void:
@@ -748,7 +750,7 @@ func _check_ghost_collision() -> void:
 			frightened_combo += 1
 			score += COMBO_SCORES[mini(frightened_combo - 1, COMBO_SCORES.size() - 1)]
 			_update_hud()
-			AudioManager.play_click()
+			AudioManager.play_coin()
 			g["mode"] = "eaten"
 			g["view"].shape = "eyes"
 			g["view"].color = Color(0.97, 0.97, 1)
@@ -760,6 +762,7 @@ func _check_ghost_collision() -> void:
 
 
 func _lose_life() -> void:
+	AudioManager.vibrate(200)
 	lives -= 1
 	_update_hud()
 	AudioManager.play_lose()

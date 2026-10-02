@@ -93,8 +93,10 @@ var anim_time: float = 0.0
 
 
 func _ready() -> void:
+	AudioManager.play_music("aventura")
 	_build_ui()
 	_new_game()
+	TouchHint.show_once(self, GAME_ID, [["↔", "Pon el dedo y arrástralo hacia donde quieras caminar (sigues mientras lo mantengas)."], ["👆", "Toca: pon una bomba."]])
 
 
 func _build_ui() -> void:
@@ -535,6 +537,7 @@ func _update_bombs(delta: float) -> void:
 
 
 func _explode_bomb(b: Dictionary) -> void:
+	AudioManager.play_explosion()
 	var affected: Array = _apply_explosion(b["cell"])
 	b["view"].queue_free()
 	_spawn_blast(affected)
@@ -558,6 +561,7 @@ func _spawn_blast(cells: Array) -> void:
 
 
 func _apply_explosion(cell: Vector2i) -> Array:
+	AudioManager.vibrate(40)
 	## Calcula las celdas afectadas por la explosión (se detiene en paredes,
 	## destruye como máximo un bloque blando por dirección), revela la
 	## puerta o suelta un power-up al destruir el bloque que los escondía,
@@ -644,6 +648,7 @@ func _all_enemies_cleared() -> bool:
 
 
 func _lose_life() -> void:
+	AudioManager.vibrate(200)
 	lives -= 1
 	_update_hud()
 	if lives <= 0:

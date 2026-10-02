@@ -148,6 +148,7 @@ func _ready() -> void:
 	_build_ui()
 	high_score = int(SaveManager.get_game_data(GAME_ID).get("best_score", 0))
 	_reset()
+	TouchHint.show_once(self, GAME_ID, [["👆", "Toca: salta (mantén el dedo para saltar más alto)."], ["⬇", "Desliza hacia abajo: agáchate."]])
 
 
 func _build_ui() -> void:
@@ -228,7 +229,7 @@ func _jump() -> void:
 	jump_held = true
 	if dino_y >= 0.0 and not ducking:
 		dino_vy = JUMP_VELOCITY
-		AudioManager.play_click()
+		AudioManager.play_jump()
 
 
 func _unhandled_key_input(event: InputEvent) -> void:
@@ -255,7 +256,7 @@ func _process(delta: float) -> void:
 	var new_score: int = int(distance * SCORE_PER_PX)
 	if new_score / 100 > score / 100:
 		flash_t = 1.0
-		AudioManager.play_place()
+		AudioManager.play_coin()
 	if new_score / NIGHT_EVERY > score / NIGHT_EVERY:
 		night_target = 1.0 - night_target  # alterna día y noche
 	score = new_score
@@ -328,6 +329,7 @@ func _collides() -> bool:
 
 
 func _die() -> void:
+	AudioManager.vibrate(200)
 	state = "dead"
 	died_at = Time.get_ticks_msec()
 	AudioManager.play_lose()

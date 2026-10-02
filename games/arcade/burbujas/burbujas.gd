@@ -106,8 +106,10 @@ var status_label: Label
 
 
 func _ready() -> void:
+	AudioManager.play_music("arcade")
 	_build_ui()
 	_new_game()
+	TouchHint.show_once(self, GAME_ID, [["↔", "Arrastra: el cazador te sigue."], ["👆", "Toca: dispara el arpón hacia arriba."]])
 
 
 func _build_ui() -> void:
@@ -298,7 +300,7 @@ func _fire() -> void:
 		return
 	fire_cooldown = 0.12
 	wires.append({"x": cx, "tip": FLOOR_Y - PLAYER_SIZE.y * 0.6, "stuck_t": -1.0})
-	AudioManager.play_click()
+	AudioManager.play_laser()
 
 
 func _update_balls(delta: float) -> void:
@@ -403,11 +405,12 @@ func _update_bullets(delta: float) -> void:
 
 
 func _pop_ball(k: int) -> void:
+	AudioManager.vibrate(18)
 	var b: Dictionary = balls[k]
 	balls.remove_at(k)
 	score += BALL_POINTS[b["size"]]
 	_add_pop(b["pos"], BALL_COLORS[b["size"]], BALL_RADIUS[b["size"]])
-	AudioManager.play_place()
+	AudioManager.play_pop()
 	if b["size"] < BALL_RADIUS.size() - 1:
 		var ns: int = b["size"] + 1
 		var up: float = -minf(_bounce_speed(ns) * 0.8, 520.0)
@@ -491,6 +494,7 @@ func _check_player_hit() -> void:
 
 
 func _player_hit(time_out: bool) -> void:
+	AudioManager.vibrate(200)
 	state = "dying"
 	lives -= 1
 	_update_hud()

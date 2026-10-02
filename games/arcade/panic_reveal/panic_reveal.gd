@@ -202,8 +202,10 @@ var time_label: Label
 
 
 func _ready() -> void:
+	AudioManager.play_music("dulce")
 	_build_ui()
 	_new_game()
+	TouchHint.show_once(self, GAME_ID, [["👆", "Toca y arrastra: el marcador avanza hacia tu dedo y traza la línea."]])
 
 
 func _build_ui() -> void:
@@ -988,6 +990,8 @@ func _kill_enemies_in_cells(cells: Array) -> void:
 ## "aplastado" (crece y se desvanece) antes de liberar el nodo, para que se
 ## note que murió en vez de desaparecer de golpe.
 func _kill_enemy(e: Dictionary) -> void:
+	AudioManager.play_hit()
+	AudioManager.vibrate(40)
 	enemies.erase(e)
 	var view: EntitySprite = e["view"]
 	view.pivot_offset = view.size / 2.0
@@ -1081,6 +1085,7 @@ func _time_out() -> void:
 
 
 func _lose_life() -> void:
+	AudioManager.vibrate(200)
 	lives -= 1
 	for c: Vector2i in trail:
 		grid_state[c.y][c.x] = "open"

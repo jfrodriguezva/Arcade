@@ -89,8 +89,10 @@ var status_label: Label
 
 
 func _ready() -> void:
+	AudioManager.play_music("espacio")
 	_build_ui()
 	_new_game()
+	TouchHint.show_once(self, GAME_ID, [["👆", "Mantén el dedo: la nave gira hacia él y dispara al apuntarle."], ["↗", "Si tu dedo está lejos de la nave, además acelera hacia allá."], ["👆👆", "Doble toque: hiperespacio."]])
 
 
 func _build_ui() -> void:
@@ -239,6 +241,7 @@ func _on_fire_pressed() -> void:
 	if state != "playing" or fire_cooldown_left > 0.0 or bullets.size() >= MAX_BULLETS:
 		return
 	fire_cooldown_left = FIRE_COOLDOWN
+	AudioManager.play_laser()
 	var dir := Vector2(sin(ship_rot), -cos(ship_rot))
 	var bullet_pos: Vector2 = ship_pos + dir * SHIP_RADIUS
 	var view := EntitySprite.new()
@@ -480,6 +483,8 @@ func _award(points: int) -> void:
 
 
 func _break_asteroid(a: Dictionary, index: int) -> void:
+	AudioManager.play_explosion()
+	AudioManager.vibrate(20)
 	a["view"].queue_free()
 	asteroids.remove_at(index)
 
@@ -511,6 +516,7 @@ func _check_ship_collision() -> void:
 
 
 func _lose_life() -> void:
+	AudioManager.vibrate(200)
 	lives -= 1
 	_update_hud()
 	if lives <= 0:

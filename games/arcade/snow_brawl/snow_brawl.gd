@@ -122,8 +122,10 @@ var status_label: Label
 
 
 func _ready() -> void:
+	AudioManager.play_music("aventura")
 	_build_ui()
 	_new_game()
+	TouchHint.show_once(self, GAME_ID, [["↔", "Arrastra a los lados: camina."], ["👆", "Toca: lanza nieve. Pegado a una bola de nieve, la patea."], ["⬆", "Desliza hacia arriba: salta."]])
 
 
 func _build_ui() -> void:
@@ -269,6 +271,7 @@ func _unhandled_key_input(event: InputEvent) -> void:
 
 func _jump() -> void:
 	if state == "playing" and on_ground:
+		AudioManager.play_jump()
 		player_vel.y = JUMP_VELOCITY
 		on_ground = false
 
@@ -284,11 +287,11 @@ func _shoot() -> void:
 			b["rolling"] = true
 			b["vel"] = Vector2(BALL_ROLL_SPEED * facing, 0)
 			b["chain"] = 0
-			AudioManager.play_power()
+			AudioManager.play_kick()
 			return
 	var start: Vector2 = player_pos + Vector2(PLAYER_SIZE.x / 2.0 + facing * 14.0, 14.0)
 	shots.append({"pos": start, "start": start, "vel": Vector2(SNOW_SPEED * facing, -90.0)})
-	AudioManager.play_click()
+	AudioManager.play_pop()
 
 
 # ------------------------------------------------------------------ bucle --
@@ -551,11 +554,12 @@ func _shatter(b: Dictionary) -> void:
 
 
 func _kill_enemy(e: Dictionary, pos: Vector2, points: int) -> void:
+	AudioManager.vibrate(30)
 	e["alive"] = false
 	score += points
 	effects.append({"kind": "pts", "pos": pos, "t": 0.0, "text": "%d" % points})
 	effects.append({"kind": "shatter", "pos": pos + ENEMY_SIZE / 2.0, "t": 0.0})
-	AudioManager.play_click()
+	AudioManager.play_hit()
 	if randf() < 0.5:
 		var r: int = randi() % 100
 		var acc := 0
@@ -697,6 +701,7 @@ func _level_clear() -> void:
 
 
 func _lose_life() -> void:
+	AudioManager.vibrate(200)
 	lives -= 1
 	_lose_potions()
 	_update_hud()

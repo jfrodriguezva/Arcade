@@ -234,8 +234,10 @@ var status_label: Label
 
 
 func _ready() -> void:
+	AudioManager.play_music("arcade")
 	_build_ui()
 	_new_game()
+	TouchHint.show_once(self, GAME_ID, [["↔", "Arrastra: mueve la paleta."], ["👆", "Toca: lanza la bola (y suéltala si la atrapaste)."]])
 
 
 func _build_ui() -> void:
@@ -626,6 +628,7 @@ func _reflect(b: Dictionary, ball_rect: Rect2, other: Rect2) -> void:
 
 
 func _damage_brick(brick: Dictionary) -> void:
+	AudioManager.play_hit()
 	if brick["hits"] < 0:
 		# Dorado: indestructible, solo destella.
 		brick["view"].modulate = Color(1.6, 1.6, 1.6)
@@ -847,6 +850,7 @@ func _check_ball_enemies(b: Dictionary) -> void:
 
 
 func _kill_enemy(e: Dictionary) -> void:
+	AudioManager.vibrate(25)
 	score += ENEMY_POINTS
 	_update_hud()
 	AudioManager.play_click()
@@ -952,6 +956,7 @@ func _draw_doh() -> void:
 
 # -------------------------------------------------------------- fin/nivel --
 func _lose_life() -> void:
+	AudioManager.vibrate(200)
 	lives -= 1
 	_update_hud()
 	AudioManager.play_error()

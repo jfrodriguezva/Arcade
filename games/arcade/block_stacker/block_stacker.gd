@@ -73,8 +73,10 @@ var status_label: Label
 
 
 func _ready() -> void:
+	AudioManager.play_music("aventura")
 	_build_ui()
 	_new_game()
+	TouchHint.show_once(self, GAME_ID, [["↔", "Arrastra a los lados: mueve la pieza."], ["👆", "Toca: rota la pieza."], ["⬇", "Arrastra hacia abajo para bajarla; desliza rápido para dejarla caer."], ["⬆", "Desliza hacia arriba: guarda la pieza."]])
 
 
 func _build_ui() -> void:
@@ -536,6 +538,8 @@ func _clear_lines() -> void:
 
 	lines_cleared += cleared
 	score += LINE_SCORE[cleared] * level
+	AudioManager.vibrate(25 * cleared)
+	AudioManager.play_coin()
 	level = min(1 + int(lines_cleared / LINES_PER_LEVEL), MAX_LEVEL)
 	fall_interval = max(0.12, 1.0 - (level - 1) * 0.085)
 	_update_hud()
