@@ -4,7 +4,7 @@
 // Incrementing CACHE_VERSION will kick off the install event and force
 // previously cached resources to be updated from the network.
 /** @type {string} */
-const CACHE_VERSION = '1791225329|3962073';
+const CACHE_VERSION = '1791232365|4949622';
 /** @type {string} */
 const CACHE_PREFIX = 'Arcade Platform-sw-cache-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
