@@ -4,12 +4,12 @@
 // Incrementing CACHE_VERSION will kick off the install event and force
 // previously cached resources to be updated from the network.
 /** @type {string} */
-const CACHE_VERSION = '1791385094|4438398';
+const CACHE_VERSION = '1791405038|25615146';
 /** @type {string} */
 const CACHE_PREFIX = 'PrayGamex-sw-cache-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 // Motor en caché propio (nombre = su contenido): sobrevive a las actualizaciones del juego.
-const ENGINE_CACHE = CACHE_PREFIX + 'engine-fc74679e3b97f768';
+const ENGINE_CACHE = CACHE_PREFIX + 'engine-ce35f2bf781ad236';
 function cacheFor(name) { return caches.open(name === 'index.wasm' ? ENGINE_CACHE : CACHE_NAME); }
 /** @type {string} */
 const OFFLINE_URL = 'index.offline.html';

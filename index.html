@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="es">
 	<head>
 <!-- Copyright (c) 2026 Juan Francisco Rodriguez Vazquez. Todos los derechos reservados. Prohibida su copia, modificación, distribución o descompilación sin autorización. -->
 <meta name="copyright" content="© 2026 Juan Francisco Rodriguez Vazquez. Todos los derechos reservados.">
@@ -98,7 +98,35 @@ body {
 <link rel="apple-touch-icon" href="index.apple-touch-icon.png"/>
 <link rel="manifest" href="index.manifest.json">
 
-	<style>#carga-nota{position:absolute;bottom:12%;left:0;right:0;text-align:center;font-family:sans-serif;color:#9aa3c7;font-size:15px;padding:0 24px;}</style><script>window.addEventListener("DOMContentLoaded",function(){var s=document.getElementById("status");if(!s)return;var d=document.createElement("div");d.id="carga-nota";d.textContent="Cargando la plataforma de juegos... La primera vez (y después de cada actualización) tarda un poco; luego abre al instante.";s.appendChild(d);});</script>
+	<style>
+#status{background:linear-gradient(180deg,#6a35c9 0%,#4d299e 55%,#3a2a9a 100%)!important}
+#status-progress{opacity:0!important;pointer-events:none}
+#carga{position:absolute;left:0;right:0;bottom:9%;display:flex;flex-direction:column;align-items:center;
+ gap:10px;font-family:'Fredoka','Noto Sans',Arial,sans-serif;color:#fff;padding:0 24px}
+#carga-barra{width:min(78vw,420px);height:22px;border-radius:12px;background:rgba(255,255,255,.18);
+ box-shadow:inset 0 2px 4px rgba(0,0,0,.25);overflow:hidden}
+#carga-relleno{height:100%;width:3%;border-radius:12px;transition:width .25s ease-out;
+ background:linear-gradient(90deg,#ff549a,#ffcc38,#21d6c7);background-size:200% 100%;animation:carga-brillo 1.6s linear infinite}
+@keyframes carga-brillo{from{background-position:0 0}to{background-position:200% 0}}
+#carga-num{font-size:20px;font-weight:700;text-shadow:0 2px 3px rgba(0,0,0,.35)}
+#carga-tip{font-size:15px;color:#e6defa;text-align:center;max-width:min(440px,88vw);min-height:2.6em;transition:opacity .4s}
+</style>
+<script>window.addEventListener("DOMContentLoaded",function(){
+var s=document.getElementById("status"),p=document.getElementById("status-progress");if(!s||!p)return;
+var c=document.createElement("div");c.id="carga";
+c.innerHTML='<div id="carga-num">Cargando…</div><div id="carga-barra"><div id="carga-relleno"></div></div><div id="carga-tip"></div>';
+s.appendChild(c);
+var tips=["La primera vez tarda un poco; después abre al instante.","🔥 Haz el reto del día para no perder tu racha.",
+"🎁 Cada día que entras hay un regalo de monedas, y crece si vienes seguido.","🛍 Con tus monedas compras avatares en la Tienda.",
+"📤 Al ganar puedes compartir tu resultado con tus amigos.","📶 Juega en red con amigos cerca: uno crea la sala y los demás se unen.",
+"🎉 Modo Fiesta: de 1 a 4 personas en un mismo celular.","⭐ Toca la estrella de un juego para tenerlo en Favoritos."];
+var tip=document.getElementById("carga-tip"),i=0;tip.textContent=tips[0];
+setInterval(function(){tip.style.opacity=0;setTimeout(function(){i=(i+1)%tips.length;tip.textContent=tips[i];tip.style.opacity=1;},400);},3800);
+var num=document.getElementById("carga-num"),bar=document.getElementById("carga-relleno");
+(function tick(){if(s.style.visibility==="hidden"||s.style.display==="none")return;
+if(p.max>1&&p.hasAttribute("value")){var f=Math.min(p.value/p.max,1);bar.style.width=Math.max(3,f*100)+"%";
+num.textContent=(f>=.999?"Preparando los juegos…":"Cargando "+Math.round(f*100)+"%  ·  "+(p.value/1048576).toFixed(1)+" de "+(p.max/1048576).toFixed(1)+" MB");}
+requestAnimationFrame(tick);})();});</script>
 <script>window.arcadeInstall={ev:null};window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();window.arcadeInstall.ev=e;});window.addEventListener('appinstalled',function(){window.arcadeInstall.ev=null;});</script>
 </head>
 	<body>
@@ -118,7 +146,7 @@ body {
 
 		<script src="index.js"></script>
 		<script>
-const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":true,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck":10353012,"index.wasm":39514754},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4,"serviceWorker":"index.service.worker.js"};
+const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":true,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck":10689952,"index.wasm":25133276},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4,"serviceWorker":"index.service.worker.js"};
 const GODOT_THREADS_ENABLED = false;
 const engine = new Engine(GODOT_CONFIG);
 
