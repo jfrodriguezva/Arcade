@@ -1,6 +1,6 @@
-# Arcade Platform
+# PrayGamex™
 
-Plataforma de juegos de mesa y arcade. Para jugar: https://jfrodriguezva.github.io/Arcade/
+PrayGamex™: plataforma de juegos de mesa, arcade y móvil. Para jugar: https://jfrodriguezva.github.io/Arcade/
 
 Este repositorio contiene únicamente la versión publicada (compilada) del
 juego. El código fuente es privado.

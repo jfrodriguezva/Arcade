@@ -4,9 +4,9 @@
 // Incrementing CACHE_VERSION will kick off the install event and force
 // previously cached resources to be updated from the network.
 /** @type {string} */
-const CACHE_VERSION = '1791330252|5972512';
+const CACHE_VERSION = '1791384100|7019763';
 /** @type {string} */
-const CACHE_PREFIX = 'Arcade Platform-sw-cache-';
+const CACHE_PREFIX = 'PrayGamex-sw-cache-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 // Motor en caché propio (nombre = su contenido): sobrevive a las actualizaciones del juego.
 const ENGINE_CACHE = CACHE_PREFIX + 'engine-fc74679e3b97f768';
