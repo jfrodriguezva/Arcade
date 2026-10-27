@@ -4,7 +4,7 @@
 // Incrementing CACHE_VERSION will kick off the install event and force
 // previously cached resources to be updated from the network.
 /** @type {string} */
-const CACHE_VERSION = '1793127275|46783293';
+const CACHE_VERSION = '1793139567|38388637';
 /** @type {string} */
 const CACHE_PREFIX = 'PrayGamex-sw-cache-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
@@ -102,8 +102,9 @@ self.addEventListener(
 		const referrer = event.request.referrer || '';
 		const base = referrer.slice(0, referrer.lastIndexOf('/') + 1);
 		const local = url.startsWith(base) ? url.replace(base, '') : '';
-		const isCacheable = FULL_CACHE.some((v) => v === local) || (base === referrer && base.endsWith(CACHED_FILES[0]));
-		if (isNavigate || isCacheable) {
+		const enDemo = new URL(url, self.location).pathname.startsWith(new URL('demo/', self.registration.scope).pathname);
+		const isCacheable = !enDemo && FULL_CACHE.some((v) => v === local) || (base === referrer && base.endsWith(CACHED_FILES[0]));
+		if (!enDemo && (isNavigate || isCacheable)) {
 			event.respondWith((async () => {
 				// Try to use cache first
 				const cache = await cacheFor(local);
