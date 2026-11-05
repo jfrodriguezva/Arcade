@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PrayGamex</title>
+<script>
+(function(){
+  var cats=["tradicion","mesa","mente","arcade","ninos"];
+  var seg=location.pathname.split("/");
+  var i=-1;for(var k=0;k<seg.length;k++){if(cats.indexOf(seg[k])>=0){i=k;break;}}
+  var q=new URLSearchParams(location.search);
+  if(i<0){
+    // No es una dirección de juego: al inicio del sitio (una sola vez).
+    if(q.get("pgx404")){document.addEventListener("DOMContentLoaded",function(){document.body.style.display="block";});return;}
+    location.replace((seg.length>2&&seg[1]?"/"+seg[1]+"/":"/")+"?pgx404=1");return;
+  }
+  var base=seg.slice(0,i).join("/")+"/";
+  var resto=seg.slice(i+1).filter(Boolean);
+  var demo=resto.indexOf("demo")>=0;
+  resto=resto.filter(function(x){return x!=="demo";});
+  var ruta=seg[i]+(resto.length?"/"+resto[0]:"")+(demo?"/demo":"");
+  q.set("ruta",ruta);
+  location.replace(base+(demo?"demo/":"")+"index.html?"+q.toString());
+})();
+</script>
+<style>body{display:none;background:#1d1f2b;color:#fff;font:18px system-ui,sans-serif;text-align:center;padding:3em 1em}a{color:#ffd166}</style>
+</head><body><p>Esta página no existe.</p><p><a href="/">Ir a PrayGamex</a></p></body></html>
