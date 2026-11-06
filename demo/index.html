@@ -133,6 +133,11 @@ if(p.max>1&&p.hasAttribute("value")){var f=Math.min(p.value/p.max,1);bar.style.w
 num.textContent=(f>=.999?"Preparando los juegos…":"Cargando "+Math.round(f*100)+"%  ·  "+(p.value/1048576).toFixed(1)+" de "+(p.max/1048576).toFixed(1)+" MB");}
 requestAnimationFrame(tick);})();});</script>
 <script>window.arcadeInstall={ev:null};window.addEventListener('beforeinstallprompt',function(e){e.preventDefault();window.arcadeInstall.ev=e;});window.addEventListener('appinstalled',function(){window.arcadeInstall.ev=null;});</script>
+<script>(function(){if(!('serviceWorker' in navigator))return;var t0=Date.now();
+function usar(w){if(!w||!navigator.serviceWorker.controller)return;w.postMessage(Date.now()-t0<20000?'update':'claim');}
+function vigilar(r){if(!r)return;if(r.waiting)usar(r.waiting);r.addEventListener('updatefound',function(){var w=r.installing;if(!w)return;
+w.addEventListener('statechange',function(){if(w.state==='installed')usar(w);});});r.update().catch(function(){});}
+window.addEventListener('load',function(){navigator.serviceWorker.getRegistration().then(vigilar).catch(function(){});});})();</script>
 </head>
 	<body>
 		<canvas id="canvas">
@@ -151,7 +156,7 @@ requestAnimationFrame(tick);})();});</script>
 
 		<script src="index.js"></script>
 		<script>
-const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":true,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck":5290152,"index.wasm":25133276},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4};
+const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":true,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck":5286344,"index.wasm":25133276},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4};
 const GODOT_THREADS_ENABLED = false;
 const engine = new Engine(GODOT_CONFIG);
 
