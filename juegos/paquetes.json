@@ -6,13 +6,13 @@
  },
  "ahorcado": {
   "archivo": "ahorcado.pck",
-  "bytes": 392528,
-  "huella": "3be841857fdd"
+  "bytes": 392544,
+  "huella": "e634a691c67f"
  },
  "anagramas": {
   "archivo": "anagramas.pck",
-  "bytes": 351304,
-  "huella": "652bc6048d24"
+  "bytes": 351320,
+  "huella": "2487039ca742"
  },
  "arkanoid": {
   "archivo": "arkanoid.pck",
@@ -31,8 +31,8 @@
  },
  "basta": {
   "archivo": "basta.pck",
-  "bytes": 375000,
-  "huella": "cbb3535c0221"
+  "bytes": 375016,
+  "huella": "07df6d25aef5"
  },
  "battleship": {
   "archivo": "battleship.pck",
@@ -41,8 +41,8 @@
  },
  "bienes_raices": {
   "archivo": "bienes_raices.pck",
-  "bytes": 405592,
-  "huella": "4c380ce08ef6"
+  "bytes": 405576,
+  "huella": "e9da15910d17"
  },
  "billar": {
   "archivo": "billar.pck",
@@ -176,8 +176,8 @@
  },
  "crucigramas": {
   "archivo": "crucigramas.pck",
-  "bytes": 339340,
-  "huella": "f59d9489239a"
+  "bytes": 339356,
+  "huella": "1f4d6b2b858b"
  },
  "cubilete": {
   "archivo": "cubilete.pck",
@@ -192,7 +192,7 @@
  "desliza": {
   "archivo": "desliza.pck",
   "bytes": 4519860,
-  "huella": "db3c4ac1dad1"
+  "huella": "27e79f6245d3"
  },
  "diferencias": {
   "archivo": "diferencias.pck",
@@ -251,8 +251,8 @@
  },
  "imperios": {
   "archivo": "imperios.pck",
-  "bytes": 471180,
-  "huella": "faf4940e826d"
+  "bytes": 471164,
+  "huella": "da82ae55f66e"
  },
  "instrumentos": {
   "archivo": "instrumentos.pck",
@@ -282,7 +282,7 @@
  "loteria": {
   "archivo": "loteria.pck",
   "bytes": 4505876,
-  "huella": "3e5df3241112"
+  "huella": "69984ce33ee8"
  },
  "mahjong": {
   "archivo": "mahjong.pck",
@@ -381,8 +381,8 @@
  },
  "poleana": {
   "archivo": "poleana.pck",
-  "bytes": 339316,
-  "huella": "61522dc3aa6b"
+  "bytes": 339332,
+  "huella": "4eb69dc98cac"
  },
  "pueblo_viajero": {
   "archivo": "pueblo_viajero.pck",
@@ -402,7 +402,7 @@
  "rompecabezas": {
   "archivo": "rompecabezas.pck",
   "bytes": 4520448,
-  "huella": "11f19748bd2c"
+  "huella": "8c24003a0fd3"
  },
  "rummy": {
   "archivo": "rummy.pck",
@@ -471,8 +471,8 @@
  },
  "une_colores": {
   "archivo": "une_colores.pck",
-  "bytes": 328020,
-  "huella": "d5ecdf57eb1f"
+  "bytes": 328004,
+  "huella": "b600ae6e9760"
  },
  "une_puntos": {
   "archivo": "une_puntos.pck",
