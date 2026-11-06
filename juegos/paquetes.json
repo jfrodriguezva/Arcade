@@ -207,7 +207,7 @@
  "domino": {
   "archivo": "domino.pck",
   "bytes": 347372,
-  "huella": "69a666c062d9"
+  "huella": "fe63f5223298"
  },
  "donde_esta": {
   "archivo": "donde_esta.pck",
@@ -236,8 +236,8 @@
  },
  "fiesta": {
   "archivo": "fiesta.pck",
-  "bytes": 348140,
-  "huella": "c8cd62d0fde9"
+  "bytes": 347468,
+  "huella": "42644f1eb6ec"
  },
  "gatoku": {
   "archivo": "gatoku.pck",
@@ -386,8 +386,8 @@
  },
  "pueblo_viajero": {
   "archivo": "pueblo_viajero.pck",
-  "bytes": 338036,
-  "huella": "e3018efebfc0"
+  "bytes": 338212,
+  "huella": "43568837d334"
  },
  "rayuela": {
   "archivo": "rayuela.pck",
