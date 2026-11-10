@@ -14,6 +14,11 @@
   "bytes": 351560,
   "huella": "4c9d1d742c81"
  },
+ "arena": {
+  "archivo": "arena.pck",
+  "bytes": 334872,
+  "huella": "7740a2248073"
+ },
  "arkanoid": {
   "archivo": "arkanoid.pck",
   "bytes": 344624,
@@ -28,6 +33,11 @@
   "archivo": "backgammon.pck",
   "bytes": 334328,
   "huella": "0c5c42820bfb"
+ },
+ "banda": {
+  "archivo": "banda.pck",
+  "bytes": 329576,
+  "huella": "60db5b3487ac"
  },
  "basta": {
   "archivo": "basta.pck",
@@ -61,8 +71,8 @@
  },
  "blockjam": {
   "archivo": "blockjam.pck",
-  "bytes": 345140,
-  "huella": "8b368a0f6e95"
+  "bytes": 348660,
+  "huella": "0d5ad6262b71"
  },
  "bloques_bum": {
   "archivo": "bloques_bum.pck",
@@ -234,10 +244,30 @@
   "bytes": 330460,
   "huella": "86a0c51221fb"
  },
+ "familia_rummy": {
+  "archivo": "familia_rummy.pck",
+  "bytes": 314672,
+  "huella": "a5319b7d61dd"
+ },
+ "feria": {
+  "archivo": "feria.pck",
+  "bytes": 314632,
+  "huella": "3735de6d8323"
+ },
  "fiesta": {
   "archivo": "fiesta.pck",
   "bytes": 347468,
   "huella": "42644f1eb6ec"
+ },
+ "flechas": {
+  "archivo": "flechas.pck",
+  "bytes": 326440,
+  "huella": "aa47e9c9bb88"
+ },
+ "fortaleza": {
+  "archivo": "fortaleza.pck",
+  "bytes": 332836,
+  "huella": "d4fe3a09691f"
  },
  "gatoku": {
   "archivo": "gatoku.pck",
@@ -314,10 +344,20 @@
   "bytes": 333688,
   "huella": "03f36ea47cd0"
  },
+ "mi_parque": {
+  "archivo": "mi_parque.pck",
+  "bytes": 331268,
+  "huella": "01af39d693f1"
+ },
  "minigolf": {
   "archivo": "minigolf.pck",
   "bytes": 334736,
   "huella": "50f2f86f2d06"
+ },
+ "musica": {
+  "archivo": "musica.pck",
+  "bytes": 314636,
+  "huella": "0a7343f2dcfb"
  },
  "nonogramas": {
   "archivo": "nonogramas.pck",
@@ -343,6 +383,11 @@
   "archivo": "parchis.pck",
   "bytes": 335860,
   "huella": "d9c6edd6f025"
+ },
+ "pasajeros": {
+  "archivo": "pasajeros.pck",
+  "bytes": 332308,
+  "huella": "20af07d0ea6c"
  },
  "patolli": {
   "archivo": "patolli.pck",
@@ -386,8 +431,8 @@
  },
  "pueblo_viajero": {
   "archivo": "pueblo_viajero.pck",
-  "bytes": 338372,
-  "huella": "08295b8ead84"
+  "bytes": 341172,
+  "huella": "db3f64859b47"
  },
  "rayuela": {
   "archivo": "rayuela.pck",
@@ -429,10 +474,20 @@
   "bytes": 345324,
   "huella": "fe39ae4fb014"
  },
+ "sobreviviente": {
+  "archivo": "sobreviviente.pck",
+  "bytes": 331872,
+  "huella": "7c8e13814266"
+ },
  "solitaire": {
   "archivo": "solitaire.pck",
   "bytes": 338968,
   "huella": "8a319ca44cb6"
+ },
+ "solitarios": {
+  "archivo": "solitarios.pck",
+  "bytes": 314648,
+  "huella": "749a02b36ff1"
  },
  "sopa_letras": {
   "archivo": "sopa_letras.pck",
@@ -448,6 +503,11 @@
   "archivo": "sudoku.pck",
   "bytes": 335260,
   "huella": "865dcae82908"
+ },
+ "sudokus": {
+  "archivo": "sudokus.pck",
+  "bytes": 314640,
+  "huella": "0fc5025225bb"
  },
  "tenis": {
   "archivo": "tenis.pck",
@@ -468,6 +528,16 @@
   "archivo": "toma_todo.pck",
   "bytes": 336560,
   "huella": "791141cba0dd"
+ },
+ "tornillos": {
+  "archivo": "tornillos.pck",
+  "bytes": 332516,
+  "huella": "53f7f73641e2"
+ },
+ "tres_caminos": {
+  "archivo": "tres_caminos.pck",
+  "bytes": 329980,
+  "huella": "462502df0c14"
  },
  "tripeaks": {
   "archivo": "tripeaks.pck",
