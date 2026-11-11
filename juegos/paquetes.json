@@ -9,6 +9,11 @@
   "bytes": 396400,
   "huella": "3b98ce9051ad"
  },
+ "ajolote": {
+  "archivo": "ajolote.pck",
+  "bytes": 340840,
+  "huella": "1fb4606cfd0d"
+ },
  "anagramas": {
   "archivo": "anagramas.pck",
   "bytes": 354568,
@@ -133,6 +138,11 @@
   "archivo": "canicas.pck",
   "bytes": 338900,
   "huella": "919a8df30948"
+ },
+ "carreritas": {
+  "archivo": "carreritas.pck",
+  "bytes": 347612,
+  "huella": "486b51911345"
  },
  "carta_blanca": {
   "archivo": "carta_blanca.pck",
@@ -289,6 +299,11 @@
   "bytes": 332524,
   "huella": "63453a3d5c35"
  },
+ "granja": {
+  "archivo": "granja.pck",
+  "bytes": 340512,
+  "huella": "1692c21665f1"
+ },
  "hockey": {
   "archivo": "hockey.pck",
   "bytes": 329856,
@@ -301,8 +316,8 @@
  },
  "instrumentos": {
   "archivo": "instrumentos.pck",
-  "bytes": 338804,
-  "huella": "ecb761d32f70"
+  "bytes": 338996,
+  "huella": "14d9349cf591"
  },
  "invasion_espacial": {
   "archivo": "invasion_espacial.pck",
@@ -424,6 +439,11 @@
   "bytes": 329396,
   "huella": "5a50d94bb05d"
  },
+ "pinball": {
+  "archivo": "pinball.pck",
+  "bytes": 337512,
+  "huella": "454ce6e40782"
+ },
  "piramide": {
   "archivo": "piramide.pck",
   "bytes": 329596,
@@ -431,8 +451,8 @@
  },
  "pizarra": {
   "archivo": "pizarra.pck",
-  "bytes": 339828,
-  "huella": "6a1c92a6867d"
+  "bytes": 340148,
+  "huella": "e1782ff5b9cf"
  },
  "poker": {
   "archivo": "poker.pck",
@@ -461,13 +481,18 @@
  },
  "rompecabezas": {
   "archivo": "rompecabezas.pck",
-  "bytes": 4521104,
-  "huella": "a3de182ec2d8"
+  "bytes": 4521392,
+  "huella": "853f27264242"
  },
  "rummy": {
   "archivo": "rummy.pck",
   "bytes": 335012,
   "huella": "544945c1415d"
+ },
+ "sabelotodo": {
+  "archivo": "sabelotodo.pck",
+  "bytes": 347528,
+  "huella": "0db3819b60eb"
  },
  "senku": {
   "archivo": "senku.pck",
@@ -524,6 +549,11 @@
   "bytes": 314640,
   "huella": "0fc5025225bb"
  },
+ "taqueria": {
+  "archivo": "taqueria.pck",
+  "bytes": 340064,
+  "huella": "547b34106a17"
+ },
  "tenis": {
   "archivo": "tenis.pck",
   "bytes": 339864,
@@ -571,8 +601,8 @@
  },
  "une_puntos": {
   "archivo": "une_puntos.pck",
-  "bytes": 338864,
-  "huella": "3a3d910b1fe2"
+  "bytes": 339120,
+  "huella": "8d57e094677b"
  },
  "verdad_reto": {
   "archivo": "verdad_reto.pck",
@@ -591,7 +621,7 @@
  },
  "xilofono": {
   "archivo": "xilofono.pck",
-  "bytes": 335336,
-  "huella": "8b4411f216e3"
+  "bytes": 335464,
+  "huella": "4343b55a9f65"
  }
 }
