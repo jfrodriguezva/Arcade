@@ -16,8 +16,8 @@
  },
  "arena": {
   "archivo": "arena.pck",
-  "bytes": 335064,
-  "huella": "1bd3b270ff00"
+  "bytes": 346520,
+  "huella": "60fa6e432a6f"
  },
  "arkanoid": {
   "archivo": "arkanoid.pck",
@@ -39,6 +39,11 @@
   "bytes": 332856,
   "huella": "ff8ccde15b2c"
  },
+ "basquetbol": {
+  "archivo": "basquetbol.pck",
+  "bytes": 342508,
+  "huella": "bc467c50c989"
+ },
  "basta": {
   "archivo": "basta.pck",
   "bytes": 377896,
@@ -49,6 +54,11 @@
   "bytes": 330440,
   "huella": "46990351c8ce"
  },
+ "beisbol": {
+  "archivo": "beisbol.pck",
+  "bytes": 338360,
+  "huella": "45414f82a808"
+ },
  "bienes_raices": {
   "archivo": "bienes_raices.pck",
   "bytes": 405512,
@@ -56,8 +66,8 @@
  },
  "billar": {
   "archivo": "billar.pck",
-  "bytes": 345436,
-  "huella": "8c72eeb29ae7"
+  "bytes": 369052,
+  "huella": "67cae2c8a395"
  },
  "blackjack": {
   "archivo": "blackjack.pck",
@@ -76,18 +86,18 @@
  },
  "bloques_bum": {
   "archivo": "bloques_bum.pck",
-  "bytes": 334004,
-  "huella": "8896618066a9"
+  "bytes": 334132,
+  "huella": "77a5a871fe62"
  },
  "boliche": {
   "archivo": "boliche.pck",
-  "bytes": 342072,
-  "huella": "f8d7ad218167"
+  "bytes": 345336,
+  "huella": "92c57888a5ae"
  },
  "bolita": {
   "archivo": "bolita.pck",
-  "bytes": 336600,
-  "huella": "aaed364211b7"
+  "bytes": 337720,
+  "huella": "d2007f385105"
  },
  "bomber_maze": {
   "archivo": "bomber_maze.pck",
@@ -121,8 +131,8 @@
  },
  "canicas": {
   "archivo": "canicas.pck",
-  "bytes": 337076,
-  "huella": "c7285658b46e"
+  "bytes": 338900,
+  "huella": "919a8df30948"
  },
  "carta_blanca": {
   "archivo": "carta_blanca.pck",
@@ -151,8 +161,8 @@
  },
  "cohete_numeros": {
   "archivo": "cohete_numeros.pck",
-  "bytes": 331600,
-  "huella": "e9ee967af378"
+  "bytes": 332576,
+  "huella": "445270ec676a"
  },
  "colores_formas": {
   "archivo": "colores_formas.pck",
@@ -206,8 +216,8 @@
  },
  "diferencias": {
   "archivo": "diferencias.pck",
-  "bytes": 328912,
-  "huella": "d38598b4c050"
+  "bytes": 330224,
+  "huella": "38cb7b9fc2e9"
  },
  "dino_runner": {
   "archivo": "dino_runner.pck",
@@ -226,8 +236,8 @@
  },
  "dos_mil": {
   "archivo": "dos_mil.pck",
-  "bytes": 334008,
-  "huella": "327137421323"
+  "bytes": 334136,
+  "huella": "1ae3757e0f02"
  },
  "dulce_fiesta": {
   "archivo": "dulce_fiesta.pck",
@@ -236,8 +246,8 @@
  },
  "ecos": {
   "archivo": "ecos.pck",
-  "bytes": 362436,
-  "huella": "b2b5422b7362"
+  "bytes": 363220,
+  "huella": "ad40299a2e06"
  },
  "escoba": {
   "archivo": "escoba.pck",
@@ -266,8 +276,13 @@
  },
  "fortaleza": {
   "archivo": "fortaleza.pck",
-  "bytes": 333044,
-  "huella": "f61db0b026b1"
+  "bytes": 338868,
+  "huella": "fb76ee33c462"
+ },
+ "futbol": {
+  "archivo": "futbol.pck",
+  "bytes": 345440,
+  "huella": "c090ea8f3d5a"
  },
  "gatoku": {
   "archivo": "gatoku.pck",
@@ -286,8 +301,8 @@
  },
  "instrumentos": {
   "archivo": "instrumentos.pck",
-  "bytes": 337876,
-  "huella": "8753d7082dbd"
+  "bytes": 338804,
+  "huella": "ecb761d32f70"
  },
  "invasion_espacial": {
   "archivo": "invasion_espacial.pck",
@@ -301,13 +316,13 @@
  },
  "lanza_aros": {
   "archivo": "lanza_aros.pck",
-  "bytes": 330164,
-  "huella": "52eb572656bf"
+  "bytes": 331668,
+  "huella": "bd3b111ec112"
  },
  "lluvia_letras": {
   "archivo": "lluvia_letras.pck",
-  "bytes": 329852,
-  "huella": "af90090af25a"
+  "bytes": 330972,
+  "huella": "908d7b9952df"
  },
  "loteria": {
   "archivo": "loteria.pck",
@@ -326,8 +341,8 @@
  },
  "matatena": {
   "archivo": "matatena.pck",
-  "bytes": 329856,
-  "huella": "c7823ca29259"
+  "bytes": 333552,
+  "huella": "dbc8dc4c41a7"
  },
  "maze_muncher": {
   "archivo": "maze_muncher.pck",
@@ -341,18 +356,18 @@
  },
  "mi_banda": {
   "archivo": "mi_banda.pck",
-  "bytes": 334824,
-  "huella": "921300716c42"
+  "bytes": 336136,
+  "huella": "5f4116527c8f"
  },
  "mi_parque": {
   "archivo": "mi_parque.pck",
-  "bytes": 331268,
-  "huella": "01af39d693f1"
+  "bytes": 335092,
+  "huella": "6790b35fe46e"
  },
  "minigolf": {
   "archivo": "minigolf.pck",
-  "bytes": 335216,
-  "huella": "8e8eb3333c57"
+  "bytes": 340416,
+  "huella": "df92dc7b68c8"
  },
  "musica": {
   "archivo": "musica.pck",
@@ -401,13 +416,13 @@
  },
  "pesca_patitos": {
   "archivo": "pesca_patitos.pck",
-  "bytes": 329788,
-  "huella": "64e335d7b127"
+  "bytes": 330876,
+  "huella": "8ff4fa0acdca"
  },
  "piedra_papel": {
   "archivo": "piedra_papel.pck",
-  "bytes": 329380,
-  "huella": "0e3d9276adbf"
+  "bytes": 329396,
+  "huella": "5a50d94bb05d"
  },
  "piramide": {
   "archivo": "piramide.pck",
@@ -416,8 +431,8 @@
  },
  "pizarra": {
   "archivo": "pizarra.pck",
-  "bytes": 339124,
-  "huella": "ba63c7fe3220"
+  "bytes": 339828,
+  "huella": "6a1c92a6867d"
  },
  "poker": {
   "archivo": "poker.pck",
@@ -436,18 +451,18 @@
  },
  "rayuela": {
   "archivo": "rayuela.pck",
-  "bytes": 330664,
-  "huella": "de9b93010a60"
+  "bytes": 333016,
+  "huella": "5db3baaccd4b"
  },
  "revienta_globos": {
   "archivo": "revienta_globos.pck",
-  "bytes": 328892,
-  "huella": "b01ffa22d53d"
+  "bytes": 331228,
+  "huella": "a77d6bd418ce"
  },
  "rompecabezas": {
   "archivo": "rompecabezas.pck",
-  "bytes": 4519568,
-  "huella": "197caecd0bc3"
+  "bytes": 4521104,
+  "huella": "a3de182ec2d8"
  },
  "rummy": {
   "archivo": "rummy.pck",
@@ -476,8 +491,8 @@
  },
  "sobreviviente": {
   "archivo": "sobreviviente.pck",
-  "bytes": 332048,
-  "huella": "2d00960e79f8"
+  "bytes": 341872,
+  "huella": "cf9bd22572e8"
  },
  "solitaire": {
   "archivo": "solitaire.pck",
@@ -511,8 +526,8 @@
  },
  "tenis": {
   "archivo": "tenis.pck",
-  "bytes": 333992,
-  "huella": "f66e1f9bfb2e"
+  "bytes": 339864,
+  "huella": "ba2e2084a959"
  },
  "tictactoe": {
   "archivo": "tictactoe.pck",
@@ -536,8 +551,8 @@
  },
  "tres_caminos": {
   "archivo": "tres_caminos.pck",
-  "bytes": 330108,
-  "huella": "f609e38cf6e9"
+  "bytes": 335244,
+  "huella": "ebc390c55f45"
  },
  "tripeaks": {
   "archivo": "tripeaks.pck",
@@ -556,22 +571,27 @@
  },
  "une_puntos": {
   "archivo": "une_puntos.pck",
-  "bytes": 337776,
-  "huella": "2e2515f0c1f8"
+  "bytes": 338864,
+  "huella": "3a3d910b1fe2"
  },
  "verdad_reto": {
   "archivo": "verdad_reto.pck",
-  "bytes": 334784,
-  "huella": "5b6dff083afe"
+  "bytes": 335136,
+  "huella": "77944881d414"
  },
  "viborita": {
   "archivo": "viborita.pck",
   "bytes": 330784,
   "huella": "faaed2563887"
  },
+ "voleibol": {
+  "archivo": "voleibol.pck",
+  "bytes": 340256,
+  "huella": "d20df66dbd90"
+ },
  "xilofono": {
   "archivo": "xilofono.pck",
-  "bytes": 334504,
-  "huella": "932c7bbf1024"
+  "bytes": 335336,
+  "huella": "8b4411f216e3"
  }
 }
