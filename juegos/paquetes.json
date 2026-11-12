@@ -56,8 +56,8 @@
  },
  "battleship": {
   "archivo": "battleship.pck",
-  "bytes": 330440,
-  "huella": "46990351c8ce"
+  "bytes": 331192,
+  "huella": "18195d1dd17b"
  },
  "beisbol": {
   "archivo": "beisbol.pck",
@@ -81,8 +81,8 @@
  },
  "block_stacker": {
   "archivo": "block_stacker.pck",
-  "bytes": 341840,
-  "huella": "f13e27e8b0f7"
+  "bytes": 342320,
+  "huella": "a438c9d40f96"
  },
  "blockjam": {
   "archivo": "blockjam.pck",
@@ -156,8 +156,8 @@
  },
  "chess": {
   "archivo": "chess.pck",
-  "bytes": 354512,
-  "huella": "a6365f4c46ba"
+  "bytes": 354720,
+  "huella": "cfad7f73fb2f"
  },
  "chinese_checkers": {
   "archivo": "chinese_checkers.pck",
@@ -186,8 +186,8 @@
  },
  "connect_four": {
   "archivo": "connect_four.pck",
-  "bytes": 337800,
-  "huella": "616f7da4c5aa"
+  "bytes": 338024,
+  "huella": "c6aebbbb20aa"
  },
  "conquian": {
   "archivo": "conquian.pck",
@@ -401,8 +401,8 @@
  },
  "othello": {
   "archivo": "othello.pck",
-  "bytes": 337268,
-  "huella": "4a103a790874"
+  "bytes": 337636,
+  "huella": "af78f2e36655"
  },
  "panic_reveal": {
   "archivo": "panic_reveal.pck",
