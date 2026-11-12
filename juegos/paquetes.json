@@ -2,12 +2,12 @@
  "adivina_quien": {
   "archivo": "adivina_quien.pck",
   "bytes": 401232,
-  "huella": "006d9d6f68b9"
+  "huella": "65aa0e0fa290"
  },
  "ahorcado": {
   "archivo": "ahorcado.pck",
-  "bytes": 596064,
-  "huella": "55f42f420a92"
+  "bytes": 594816,
+  "huella": "8a8746c9cb08"
  },
  "ajolote": {
   "archivo": "ajolote.pck",
@@ -16,13 +16,13 @@
  },
  "anagramas": {
   "archivo": "anagramas.pck",
-  "bytes": 477692,
-  "huella": "55061bae152e"
+  "bytes": 476236,
+  "huella": "4ff2cb012a05"
  },
  "arena": {
   "archivo": "arena.pck",
-  "bytes": 429940,
-  "huella": "e3a7c3a4a3a4"
+  "bytes": 430660,
+  "huella": "0c4d5614d247"
  },
  "arkanoid": {
   "archivo": "arkanoid.pck",
@@ -41,8 +41,8 @@
  },
  "banda": {
   "archivo": "banda.pck",
-  "bytes": 436612,
-  "huella": "97e27994683d"
+  "bytes": 435108,
+  "huella": "74a573a31057"
  },
  "basquetbol": {
   "archivo": "basquetbol.pck",
@@ -51,18 +51,18 @@
  },
  "basta": {
   "archivo": "basta.pck",
-  "bytes": 510552,
-  "huella": "32f14409b6cd"
+  "bytes": 509000,
+  "huella": "ca74fedc4d39"
  },
  "battleship": {
   "archivo": "battleship.pck",
-  "bytes": 456648,
-  "huella": "5a13af0afd8e"
+  "bytes": 456840,
+  "huella": "0389c998ee7b"
  },
  "beisbol": {
   "archivo": "beisbol.pck",
-  "bytes": 406776,
-  "huella": "e25bd5b38322"
+  "bytes": 405352,
+  "huella": "4d8b7e48ce2a"
  },
  "bienes_raices": {
   "archivo": "bienes_raices.pck",
@@ -81,8 +81,8 @@
  },
  "block_stacker": {
   "archivo": "block_stacker.pck",
-  "bytes": 402628,
-  "huella": "6856ac8360a5"
+  "bytes": 401092,
+  "huella": "879d9e865e7b"
  },
  "blockjam": {
   "archivo": "blockjam.pck",
@@ -176,18 +176,18 @@
  },
  "cohete_numeros": {
   "archivo": "cohete_numeros.pck",
-  "bytes": 410756,
-  "huella": "49d57d2b6dfe"
+  "bytes": 410996,
+  "huella": "2d8312d486e5"
  },
  "colores_formas": {
   "archivo": "colores_formas.pck",
-  "bytes": 367892,
-  "huella": "117dcf18e311"
+  "bytes": 367988,
+  "huella": "4c8abacbe894"
  },
  "colores_locos": {
   "archivo": "colores_locos.pck",
-  "bytes": 399520,
-  "huella": "812ebc81a4d1"
+  "bytes": 399632,
+  "huella": "ad48fd9aa581"
  },
  "connect_four": {
   "archivo": "connect_four.pck",
@@ -201,8 +201,8 @@
  },
  "constelaciones": {
   "archivo": "constelaciones.pck",
-  "bytes": 393480,
-  "huella": "ffeb1e8763c8"
+  "bytes": 391848,
+  "huella": "06ec211a1635"
  },
  "corazones": {
   "archivo": "corazones.pck",
@@ -216,8 +216,8 @@
  },
  "crucigramas": {
   "archivo": "crucigramas.pck",
-  "bytes": 401888,
-  "huella": "395f1bdbf286"
+  "bytes": 400288,
+  "huella": "920586083005"
  },
  "cubilete": {
   "archivo": "cubilete.pck",
@@ -226,18 +226,18 @@
  },
  "cuenta_conmigo": {
   "archivo": "cuenta_conmigo.pck",
-  "bytes": 381940,
-  "huella": "4084b9205177"
+  "bytes": 382052,
+  "huella": "10cd3b319da7"
  },
  "desliza": {
   "archivo": "desliza.pck",
-  "bytes": 4693360,
-  "huella": "4200f422f85a"
+  "bytes": 4692512,
+  "huella": "6bf756edc3b0"
  },
  "diferencias": {
   "archivo": "diferencias.pck",
-  "bytes": 378944,
-  "huella": "fc600b745545"
+  "bytes": 379040,
+  "huella": "6ac0a8817552"
  },
  "dino_runner": {
   "archivo": "dino_runner.pck",
@@ -266,8 +266,8 @@
  },
  "ecos": {
   "archivo": "ecos.pck",
-  "bytes": 493056,
-  "huella": "fe75f66a4f93"
+  "bytes": 491696,
+  "huella": "6577ef04fffa"
  },
  "escoba": {
   "archivo": "escoba.pck",
@@ -286,18 +286,18 @@
  },
  "fiesta": {
   "archivo": "fiesta.pck",
-  "bytes": 439096,
-  "huella": "3cf5c69fe31a"
+  "bytes": 439256,
+  "huella": "95012decb676"
  },
  "flechas": {
   "archivo": "flechas.pck",
-  "bytes": 396136,
-  "huella": "bc8a2745514d"
+  "bytes": 394536,
+  "huella": "13371666f6ac"
  },
  "fortaleza": {
   "archivo": "fortaleza.pck",
-  "bytes": 423924,
-  "huella": "ac2005417a06"
+  "bytes": 424324,
+  "huella": "94a51046cc50"
  },
  "futbol": {
   "archivo": "futbol.pck",
@@ -306,13 +306,13 @@
  },
  "gatoku": {
   "archivo": "gatoku.pck",
-  "bytes": 391208,
-  "huella": "f78dbccf647a"
+  "bytes": 391288,
+  "huella": "06d00ca88442"
  },
  "granja": {
   "archivo": "granja.pck",
-  "bytes": 440188,
-  "huella": "d894b7e7c4e5"
+  "bytes": 438748,
+  "huella": "bc2afb4c8d58"
  },
  "hockey": {
   "archivo": "hockey.pck",
@@ -321,38 +321,38 @@
  },
  "imperios": {
   "archivo": "imperios.pck",
-  "bytes": 562060,
-  "huella": "b077d33d1574"
+  "bytes": 562284,
+  "huella": "26e3170bd222"
  },
  "instrumentos": {
   "archivo": "instrumentos.pck",
-  "bytes": 398788,
-  "huella": "d961f6daa67a"
+  "bytes": 398772,
+  "huella": "1359df34385a"
  },
  "invasion_espacial": {
   "archivo": "invasion_espacial.pck",
-  "bytes": 985292,
-  "huella": "7b04199c4ed6"
+  "bytes": 984060,
+  "huella": "7b4f2946bd89"
  },
  "kakuro": {
   "archivo": "kakuro.pck",
-  "bytes": 436176,
-  "huella": "1a063817039d"
+  "bytes": 434560,
+  "huella": "eac0d0558324"
  },
  "lanza_aros": {
   "archivo": "lanza_aros.pck",
-  "bytes": 385092,
-  "huella": "5391a62655a5"
+  "bytes": 385332,
+  "huella": "96d4dec19247"
  },
  "lluvia_letras": {
   "archivo": "lluvia_letras.pck",
-  "bytes": 412512,
-  "huella": "4e20357cf324"
+  "bytes": 412608,
+  "huella": "4a55566ba921"
  },
  "loteria": {
   "archivo": "loteria.pck",
-  "bytes": 4573184,
-  "huella": "fec3f874b377"
+  "bytes": 4573936,
+  "huella": "940f9eb897ac"
  },
  "luchador": {
   "archivo": "luchador.pck",
@@ -371,8 +371,8 @@
  },
  "matatena": {
   "archivo": "matatena.pck",
-  "bytes": 381680,
-  "huella": "5e57b025df71"
+  "bytes": 380224,
+  "huella": "35005624f0d4"
  },
  "maze_muncher": {
   "archivo": "maze_muncher.pck",
@@ -386,13 +386,13 @@
  },
  "mi_banda": {
   "archivo": "mi_banda.pck",
-  "bytes": 470324,
-  "huella": "f6cdd84e678e"
+  "bytes": 470516,
+  "huella": "b18d84e850db"
  },
  "mi_parque": {
   "archivo": "mi_parque.pck",
-  "bytes": 444628,
-  "huella": "ef90af497dad"
+  "bytes": 444820,
+  "huella": "c3ca96f87baa"
  },
  "minigolf": {
   "archivo": "minigolf.pck",
@@ -406,13 +406,13 @@
  },
  "nonogramas": {
   "archivo": "nonogramas.pck",
-  "bytes": 668076,
-  "huella": "716834a17b52"
+  "bytes": 666476,
+  "huella": "462d7af300eb"
  },
  "ordena_colores": {
   "archivo": "ordena_colores.pck",
-  "bytes": 481760,
-  "huella": "8a3cc3f41f90"
+  "bytes": 481824,
+  "huella": "4cb7afa94cab"
  },
  "othello": {
   "archivo": "othello.pck",
@@ -421,8 +421,8 @@
  },
  "panaderia": {
   "archivo": "panaderia.pck",
-  "bytes": 435092,
-  "huella": "3dc0519b7ef4"
+  "bytes": 433732,
+  "huella": "401e3998a3db"
  },
  "panic_reveal": {
   "archivo": "panic_reveal.pck",
@@ -436,8 +436,8 @@
  },
  "pasajeros": {
   "archivo": "pasajeros.pck",
-  "bytes": 441076,
-  "huella": "d7a11429e593"
+  "bytes": 439796,
+  "huella": "2945c44219a9"
  },
  "patolli": {
   "archivo": "patolli.pck",
@@ -456,8 +456,8 @@
  },
  "piedra_papel": {
   "archivo": "piedra_papel.pck",
-  "bytes": 374580,
-  "huella": "49418fc7c11b"
+  "bytes": 375540,
+  "huella": "0782ddac27bf"
  },
  "pinball": {
   "archivo": "pinball.pck",
@@ -471,8 +471,8 @@
  },
  "pizarra": {
   "archivo": "pizarra.pck",
-  "bytes": 408224,
-  "huella": "7f24450b7b7e"
+  "bytes": 408368,
+  "huella": "a11ebf59bcb6"
  },
  "poker": {
   "archivo": "poker.pck",
@@ -486,13 +486,13 @@
  },
  "pueblo_viajero": {
   "archivo": "pueblo_viajero.pck",
-  "bytes": 427432,
-  "huella": "a9b712bc2e22"
+  "bytes": 427704,
+  "huella": "da10a7f0e27c"
  },
  "rayuela": {
   "archivo": "rayuela.pck",
-  "bytes": 362504,
-  "huella": "ad0400d6066e"
+  "bytes": 360968,
+  "huella": "78e466726de7"
  },
  "revienta_globos": {
   "archivo": "revienta_globos.pck",
@@ -501,8 +501,8 @@
  },
  "rompecabezas": {
   "archivo": "rompecabezas.pck",
-  "bytes": 4648972,
-  "huella": "7701b0dfad04"
+  "bytes": 6342644,
+  "huella": "8873a2c83d0b"
  },
  "rummy": {
   "archivo": "rummy.pck",
@@ -511,8 +511,8 @@
  },
  "sabelotodo": {
   "archivo": "sabelotodo.pck",
-  "bytes": 407864,
-  "huella": "bc31a80d72aa"
+  "bytes": 406200,
+  "huella": "d79eabfefa20"
  },
  "senku": {
   "archivo": "senku.pck",
@@ -531,13 +531,13 @@
  },
  "snow_brawl": {
   "archivo": "snow_brawl.pck",
-  "bytes": 403340,
-  "huella": "f2f5b9939260"
+  "bytes": 402364,
+  "huella": "725a611104a8"
  },
  "sobreviviente": {
   "archivo": "sobreviviente.pck",
-  "bytes": 453668,
-  "huella": "ceffcbdb6134"
+  "bytes": 452308,
+  "huella": "0d3f93ec7120"
  },
  "solitaire": {
   "archivo": "solitaire.pck",
@@ -551,8 +551,8 @@
  },
  "sopa_letras": {
   "archivo": "sopa_letras.pck",
-  "bytes": 393576,
-  "huella": "b139ae280014"
+  "bytes": 393848,
+  "huella": "0cd8c67cd897"
  },
  "spider_solitaire": {
   "archivo": "spider_solitaire.pck",
@@ -561,8 +561,8 @@
  },
  "sudoku": {
   "archivo": "sudoku.pck",
-  "bytes": 427992,
-  "huella": "e9504b08c672"
+  "bytes": 428072,
+  "huella": "5cbb32e4410a"
  },
  "sudokus": {
   "archivo": "sudokus.pck",
@@ -571,8 +571,8 @@
  },
  "taqueria": {
   "archivo": "taqueria.pck",
-  "bytes": 440576,
-  "huella": "551664c3d5c0"
+  "bytes": 438960,
+  "huella": "f0c3c6c462ea"
  },
  "tenis": {
   "archivo": "tenis.pck",
@@ -586,23 +586,23 @@
  },
  "timbiriche": {
   "archivo": "timbiriche.pck",
-  "bytes": 392680,
-  "huella": "6f680454653f"
+  "bytes": 392840,
+  "huella": "4163a5298833"
  },
  "toma_todo": {
   "archivo": "toma_todo.pck",
-  "bytes": 420848,
-  "huella": "20b0ab997dc3"
+  "bytes": 421296,
+  "huella": "3e026b55e7d1"
  },
  "tornillos": {
   "archivo": "tornillos.pck",
-  "bytes": 405604,
-  "huella": "7d565cc9d3b3"
+  "bytes": 404036,
+  "huella": "74a12d00689b"
  },
  "tres_caminos": {
   "archivo": "tres_caminos.pck",
-  "bytes": 434256,
-  "huella": "2616743af917"
+  "bytes": 432976,
+  "huella": "84c64ddc0064"
  },
  "tripeaks": {
   "archivo": "tripeaks.pck",
@@ -621,13 +621,13 @@
  },
  "une_puntos": {
   "archivo": "une_puntos.pck",
-  "bytes": 390096,
-  "huella": "9525cb2fa190"
+  "bytes": 390224,
+  "huella": "337d4527c4ea"
  },
  "verdad_reto": {
   "archivo": "verdad_reto.pck",
-  "bytes": 422464,
-  "huella": "8048271e6022"
+  "bytes": 422640,
+  "huella": "d34da512bf9d"
  },
  "viborita": {
   "archivo": "viborita.pck",
@@ -641,7 +641,7 @@
  },
  "xilofono": {
   "archivo": "xilofono.pck",
-  "bytes": 387380,
-  "huella": "fe382ac147b9"
+  "bytes": 387444,
+  "huella": "320557a8aeb8"
  }
 }
