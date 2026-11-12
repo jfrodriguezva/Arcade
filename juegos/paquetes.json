@@ -21,8 +21,8 @@
  },
  "arena": {
   "archivo": "arena.pck",
-  "bytes": 430660,
-  "huella": "0c4d5614d247"
+  "bytes": 434292,
+  "huella": "4bd34c5eabe2"
  },
  "arkanoid": {
   "archivo": "arkanoid.pck",
@@ -131,8 +131,8 @@
  },
  "canasta": {
   "archivo": "canasta.pck",
-  "bytes": 445104,
-  "huella": "a30d354171be"
+  "bytes": 445680,
+  "huella": "756f0379d4b2"
  },
  "canicas": {
   "archivo": "canicas.pck",
@@ -161,8 +161,8 @@
  },
  "chess": {
   "archivo": "chess.pck",
-  "bytes": 480188,
-  "huella": "4838d7d0159c"
+  "bytes": 482508,
+  "huella": "36bd9358dc4c"
  },
  "chinese_checkers": {
   "archivo": "chinese_checkers.pck",
@@ -231,8 +231,8 @@
  },
  "desliza": {
   "archivo": "desliza.pck",
-  "bytes": 4692512,
-  "huella": "6bf756edc3b0"
+  "bytes": 4696608,
+  "huella": "5ef08f9096cc"
  },
  "diferencias": {
   "archivo": "diferencias.pck",
@@ -261,8 +261,8 @@
  },
  "dulce_fiesta": {
   "archivo": "dulce_fiesta.pck",
-  "bytes": 453516,
-  "huella": "886a9fc59a6e"
+  "bytes": 458844,
+  "huella": "eec86c909051"
  },
  "ecos": {
   "archivo": "ecos.pck",
@@ -351,13 +351,13 @@
  },
  "loteria": {
   "archivo": "loteria.pck",
-  "bytes": 4573936,
-  "huella": "940f9eb897ac"
+  "bytes": 4576336,
+  "huella": "897b0af2ae40"
  },
  "luchador": {
   "archivo": "luchador.pck",
-  "bytes": 462032,
-  "huella": "eec046586018"
+  "bytes": 468928,
+  "huella": "006fa35d527b"
  },
  "mahjong": {
   "archivo": "mahjong.pck",
@@ -391,8 +391,8 @@
  },
  "mi_parque": {
   "archivo": "mi_parque.pck",
-  "bytes": 444820,
-  "huella": "c3ca96f87baa"
+  "bytes": 445668,
+  "huella": "dd0056de244b"
  },
  "minigolf": {
   "archivo": "minigolf.pck",
@@ -501,8 +501,8 @@
  },
  "rompecabezas": {
   "archivo": "rompecabezas.pck",
-  "bytes": 6342644,
-  "huella": "8873a2c83d0b"
+  "bytes": 6349044,
+  "huella": "032bfaf5eba9"
  },
  "rummy": {
   "archivo": "rummy.pck",
@@ -511,8 +511,8 @@
  },
  "sabelotodo": {
   "archivo": "sabelotodo.pck",
-  "bytes": 406200,
-  "huella": "d79eabfefa20"
+  "bytes": 408328,
+  "huella": "eace64472372"
  },
  "senku": {
   "archivo": "senku.pck",
@@ -536,8 +536,8 @@
  },
  "sobreviviente": {
   "archivo": "sobreviviente.pck",
-  "bytes": 452308,
-  "huella": "0d3f93ec7120"
+  "bytes": 457588,
+  "huella": "7ff7dd550a9d"
  },
  "solitaire": {
   "archivo": "solitaire.pck",
@@ -571,8 +571,8 @@
  },
  "taqueria": {
   "archivo": "taqueria.pck",
-  "bytes": 438960,
-  "huella": "f0c3c6c462ea"
+  "bytes": 442336,
+  "huella": "cdd213a14438"
  },
  "tenis": {
   "archivo": "tenis.pck",
