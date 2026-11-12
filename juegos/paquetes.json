@@ -139,6 +139,11 @@
   "bytes": 338900,
   "huella": "919a8df30948"
  },
+ "canoa": {
+  "archivo": "canoa.pck",
+  "bytes": 337496,
+  "huella": "320ff468d842"
+ },
  "carreritas": {
   "archivo": "carreritas.pck",
   "bytes": 347612,
@@ -151,8 +156,8 @@
  },
  "checkers": {
   "archivo": "checkers.pck",
-  "bytes": 344716,
-  "huella": "d08edaab72b9"
+  "bytes": 345180,
+  "huella": "f8df268e7c72"
  },
  "chess": {
   "archivo": "chess.pck",
@@ -161,8 +166,8 @@
  },
  "chinese_checkers": {
   "archivo": "chinese_checkers.pck",
-  "bytes": 335156,
-  "huella": "ecc0caca3b47"
+  "bytes": 335556,
+  "huella": "3caa63121c45"
  },
  "cinquillo": {
   "archivo": "cinquillo.pck",
@@ -186,13 +191,18 @@
  },
  "connect_four": {
   "archivo": "connect_four.pck",
-  "bytes": 338024,
-  "huella": "c6aebbbb20aa"
+  "bytes": 338424,
+  "huella": "fea63165b5b5"
  },
  "conquian": {
   "archivo": "conquian.pck",
   "bytes": 338332,
   "huella": "08b980066f74"
+ },
+ "constelaciones": {
+  "archivo": "constelaciones.pck",
+  "bytes": 334932,
+  "huella": "b5f8e6256114"
  },
  "corazones": {
   "archivo": "corazones.pck",
@@ -231,8 +241,8 @@
  },
  "dino_runner": {
   "archivo": "dino_runner.pck",
-  "bytes": 332132,
-  "huella": "511d4a097319"
+  "bytes": 333028,
+  "huella": "7d21b367e674"
  },
  "domino": {
   "archivo": "domino.pck",
@@ -344,6 +354,11 @@
   "bytes": 4504004,
   "huella": "45b484bb2b94"
  },
+ "luchador": {
+  "archivo": "luchador.pck",
+  "bytes": 343520,
+  "huella": "dee4cf57eb8a"
+ },
  "mahjong": {
   "archivo": "mahjong.pck",
   "bytes": 338388,
@@ -403,6 +418,11 @@
   "archivo": "othello.pck",
   "bytes": 337636,
   "huella": "af78f2e36655"
+ },
+ "panaderia": {
+  "archivo": "panaderia.pck",
+  "bytes": 345140,
+  "huella": "c1aecb20a8aa"
  },
  "panic_reveal": {
   "archivo": "panic_reveal.pck",
