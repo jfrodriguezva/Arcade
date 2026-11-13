@@ -131,8 +131,8 @@
  },
  "canasta": {
   "archivo": "canasta.pck",
-  "bytes": 445680,
-  "huella": "756f0379d4b2"
+  "bytes": 446896,
+  "huella": "7c831021544b"
  },
  "canicas": {
   "archivo": "canicas.pck",
@@ -156,8 +156,8 @@
  },
  "checkers": {
   "archivo": "checkers.pck",
-  "bytes": 450940,
-  "huella": "4b087eeba5cc"
+  "bytes": 453324,
+  "huella": "882062a4f605"
  },
  "chess": {
   "archivo": "chess.pck",
@@ -171,8 +171,8 @@
  },
  "cinquillo": {
   "archivo": "cinquillo.pck",
-  "bytes": 407264,
-  "huella": "deb71ed52462"
+  "bytes": 408032,
+  "huella": "8fc95c4c19ed"
  },
  "cohete_numeros": {
   "archivo": "cohete_numeros.pck",
@@ -196,8 +196,8 @@
  },
  "conquian": {
   "archivo": "conquian.pck",
-  "bytes": 415084,
-  "huella": "fb77b952db5c"
+  "bytes": 416092,
+  "huella": "b9b6c283f1a8"
  },
  "constelaciones": {
   "archivo": "constelaciones.pck",
@@ -211,8 +211,8 @@
  },
  "coyote": {
   "archivo": "coyote.pck",
-  "bytes": 406088,
-  "huella": "7d26b81172c5"
+  "bytes": 408056,
+  "huella": "7c839db18f86"
  },
  "crucigramas": {
   "archivo": "crucigramas.pck",
@@ -246,13 +246,13 @@
  },
  "domino": {
   "archivo": "domino.pck",
-  "bytes": 409048,
-  "huella": "a47597c1148e"
+  "bytes": 410088,
+  "huella": "93103059910f"
  },
  "donde_esta": {
   "archivo": "donde_esta.pck",
-  "bytes": 424964,
-  "huella": "eece3bbf1d84"
+  "bytes": 426676,
+  "huella": "ac4e473a361f"
  },
  "dos_mil": {
   "archivo": "dos_mil.pck",
@@ -381,8 +381,8 @@
  },
  "memorama": {
   "archivo": "memorama.pck",
-  "bytes": 409020,
-  "huella": "e97bef8c4b7a"
+  "bytes": 410268,
+  "huella": "2f1731a8d467"
  },
  "mi_banda": {
   "archivo": "mi_banda.pck",
@@ -441,8 +441,8 @@
  },
  "patolli": {
   "archivo": "patolli.pck",
-  "bytes": 421424,
-  "huella": "1c6b6eba220b"
+  "bytes": 422464,
+  "huella": "ca3463c69980"
  },
  "periquito": {
   "archivo": "periquito.pck",
@@ -481,8 +481,8 @@
  },
  "poleana": {
   "archivo": "poleana.pck",
-  "bytes": 408240,
-  "huella": "ad7f7a1b8160"
+  "bytes": 409248,
+  "huella": "6be257a8a6a5"
  },
  "pueblo_viajero": {
   "archivo": "pueblo_viajero.pck",
@@ -521,8 +521,8 @@
  },
  "siete_y_medio": {
   "archivo": "siete_y_medio.pck",
-  "bytes": 408208,
-  "huella": "1377e1d8ed11"
+  "bytes": 409280,
+  "huella": "8b5daeae498d"
  },
  "snakes_ladders": {
   "archivo": "snakes_ladders.pck",
@@ -581,13 +581,13 @@
  },
  "tictactoe": {
   "archivo": "tictactoe.pck",
-  "bytes": 435148,
-  "huella": "1a6fcda76b67"
+  "bytes": 437548,
+  "huella": "3478af8a855b"
  },
  "timbiriche": {
   "archivo": "timbiriche.pck",
-  "bytes": 392840,
-  "huella": "4163a5298833"
+  "bytes": 394600,
+  "huella": "6746d07b0418"
  },
  "toma_todo": {
   "archivo": "toma_todo.pck",
