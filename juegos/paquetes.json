@@ -46,8 +46,8 @@
  },
  "basquetbol": {
   "archivo": "basquetbol.pck",
-  "bytes": 408620,
-  "huella": "4c34b1197228"
+  "bytes": 408988,
+  "huella": "9d4af21a11ad"
  },
  "basta": {
   "archivo": "basta.pck",
@@ -61,8 +61,8 @@
  },
  "beisbol": {
   "archivo": "beisbol.pck",
-  "bytes": 405352,
-  "huella": "4d8b7e48ce2a"
+  "bytes": 407480,
+  "huella": "acdbdf087f09"
  },
  "bienes_raices": {
   "archivo": "bienes_raices.pck",
@@ -71,8 +71,8 @@
  },
  "billar": {
   "archivo": "billar.pck",
-  "bytes": 439080,
-  "huella": "5c3d443e604f"
+  "bytes": 438536,
+  "huella": "8fac627e8576"
  },
  "blackjack": {
   "archivo": "blackjack.pck",
@@ -96,8 +96,8 @@
  },
  "boliche": {
   "archivo": "boliche.pck",
-  "bytes": 424872,
-  "huella": "4273c76bdd55"
+  "bytes": 425464,
+  "huella": "600d701763e0"
  },
  "bolita": {
   "archivo": "bolita.pck",
@@ -111,13 +111,13 @@
  },
  "bridge": {
   "archivo": "bridge.pck",
-  "bytes": 452712,
-  "huella": "941c1ff3952a"
+  "bytes": 453080,
+  "huella": "10561b5dcee8"
  },
  "brisca": {
   "archivo": "brisca.pck",
-  "bytes": 401432,
-  "huella": "ebef70310230"
+  "bytes": 401848,
+  "huella": "3a23bfe401f3"
  },
  "burbujas": {
   "archivo": "burbujas.pck",
@@ -161,8 +161,8 @@
  },
  "chess": {
   "archivo": "chess.pck",
-  "bytes": 482508,
-  "huella": "36bd9358dc4c"
+  "bytes": 485244,
+  "huella": "3da8a76cd3d1"
  },
  "chinese_checkers": {
   "archivo": "chinese_checkers.pck",
@@ -176,18 +176,18 @@
  },
  "cohete_numeros": {
   "archivo": "cohete_numeros.pck",
-  "bytes": 410996,
-  "huella": "2d8312d486e5"
+  "bytes": 415364,
+  "huella": "7ff45a40ed30"
  },
  "colores_formas": {
   "archivo": "colores_formas.pck",
-  "bytes": 367988,
-  "huella": "4c8abacbe894"
+  "bytes": 370820,
+  "huella": "220a5f9fc2f9"
  },
  "colores_locos": {
   "archivo": "colores_locos.pck",
-  "bytes": 399632,
-  "huella": "ad48fd9aa581"
+  "bytes": 400128,
+  "huella": "20d16335f6cf"
  },
  "connect_four": {
   "archivo": "connect_four.pck",
@@ -221,13 +221,13 @@
  },
  "cubilete": {
   "archivo": "cubilete.pck",
-  "bytes": 417596,
-  "huella": "37420d65c681"
+  "bytes": 418044,
+  "huella": "ee16ca6f23cc"
  },
  "cuenta_conmigo": {
   "archivo": "cuenta_conmigo.pck",
-  "bytes": 382052,
-  "huella": "10cd3b319da7"
+  "bytes": 383844,
+  "huella": "7a565055c163"
  },
  "desliza": {
   "archivo": "desliza.pck",
@@ -246,8 +246,8 @@
  },
  "domino": {
   "archivo": "domino.pck",
-  "bytes": 407528,
-  "huella": "c92ece2ea087"
+  "bytes": 408136,
+  "huella": "3f5cd1c27de4"
  },
  "donde_esta": {
   "archivo": "donde_esta.pck",
@@ -286,8 +286,8 @@
  },
  "fiesta": {
   "archivo": "fiesta.pck",
-  "bytes": 439256,
-  "huella": "95012decb676"
+  "bytes": 439752,
+  "huella": "553ed549e22a"
  },
  "flechas": {
   "archivo": "flechas.pck",
@@ -296,13 +296,13 @@
  },
  "fortaleza": {
   "archivo": "fortaleza.pck",
-  "bytes": 424324,
-  "huella": "94a51046cc50"
+  "bytes": 429844,
+  "huella": "f02b8fd918c3"
  },
  "futbol": {
   "archivo": "futbol.pck",
-  "bytes": 424604,
-  "huella": "9f889c3e1f1c"
+  "bytes": 424892,
+  "huella": "2b5e3d6c8b6e"
  },
  "gatoku": {
   "archivo": "gatoku.pck",
@@ -311,8 +311,8 @@
  },
  "granja": {
   "archivo": "granja.pck",
-  "bytes": 438748,
-  "huella": "bc2afb4c8d58"
+  "bytes": 444588,
+  "huella": "dc4feb719e2e"
  },
  "hockey": {
   "archivo": "hockey.pck",
@@ -321,8 +321,8 @@
  },
  "imperios": {
   "archivo": "imperios.pck",
-  "bytes": 562284,
-  "huella": "26e3170bd222"
+  "bytes": 564444,
+  "huella": "b43a53b01900"
  },
  "instrumentos": {
   "archivo": "instrumentos.pck",
@@ -386,8 +386,8 @@
  },
  "mi_banda": {
   "archivo": "mi_banda.pck",
-  "bytes": 470516,
-  "huella": "b18d84e850db"
+  "bytes": 471300,
+  "huella": "d6729a21e25f"
  },
  "mi_parque": {
   "archivo": "mi_parque.pck",
@@ -396,8 +396,8 @@
  },
  "minigolf": {
   "archivo": "minigolf.pck",
-  "bytes": 414272,
-  "huella": "ad66167235ae"
+  "bytes": 414704,
+  "huella": "fc0bf68795a1"
  },
  "musica": {
   "archivo": "musica.pck",
@@ -467,7 +467,7 @@
  "piramide": {
   "archivo": "piramide.pck",
   "bytes": 396092,
-  "huella": "015ebe90fac0"
+  "huella": "b4887ffb9888"
  },
  "pizarra": {
   "archivo": "pizarra.pck",
@@ -476,13 +476,13 @@
  },
  "poker": {
   "archivo": "poker.pck",
-  "bytes": 428592,
-  "huella": "107b6f9558d7"
+  "bytes": 427632,
+  "huella": "48e60bd731ee"
  },
  "poleana": {
   "archivo": "poleana.pck",
-  "bytes": 407792,
-  "huella": "b7ffd6fd0e09"
+  "bytes": 408240,
+  "huella": "ad7f7a1b8160"
  },
  "pueblo_viajero": {
   "archivo": "pueblo_viajero.pck",
@@ -576,8 +576,8 @@
  },
  "tenis": {
   "archivo": "tenis.pck",
-  "bytes": 405652,
-  "huella": "7bdbdcfbc49d"
+  "bytes": 409316,
+  "huella": "1cb286b878fb"
  },
  "tictactoe": {
   "archivo": "tictactoe.pck",
@@ -607,7 +607,7 @@
  "tripeaks": {
   "archivo": "tripeaks.pck",
   "bytes": 413228,
-  "huella": "1b2545dae1c6"
+  "huella": "be017791efe0"
  },
  "triple_fichas": {
   "archivo": "triple_fichas.pck",
