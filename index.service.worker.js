@@ -4,7 +4,7 @@
 // Incrementing CACHE_VERSION will kick off the install event and force
 // previously cached resources to be updated from the network.
 /** @type {string} */
-const CACHE_VERSION = '1795038795|78809634';
+const CACHE_VERSION = '1795057304|198081315';
 /** @type {string} */
 const CACHE_PREFIX = 'PrayGamex-sw-cache-';
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
