@@ -1,44 +1,13 @@
 <!doctype html>
-<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <title>PrayGamex</title>
-<script>
-(function(){
-  var cats=["tradicion","mesa","mente","arcade","ninos"];
-  var seg=location.pathname.split("/");
-  var i=-1;for(var k=0;k<seg.length;k++){if(cats.indexOf(seg[k])>=0){i=k;break;}}
-  var q=new URLSearchParams(location.search);
-  if(i<0){
-    // Sin categoría: <sitio>/<juego>/ (…/Arcade/poleana). En github.io el
-    // primer tramo es el repositorio. La app busca el juego (aunque venga
-    // con una letra mal) y, si no existe, abre el menú.
-    var limpio=seg.filter(Boolean);
-    function aviso(){document.addEventListener("DOMContentLoaded",function(){document.body.style.display="block";});if(document.body)document.body.style.display="block";}
-    if(q.get("pgx404")||!limpio.length||limpio[limpio.length-1].indexOf(".")>=0){aviso();return;}
-    // Dónde empieza el sitio (/ en un dominio propio, /Arcade/ en github.io):
-    // el primer tramo donde está el juego (index.pck).
-    function ir(nb){
-      var raiz="/"+limpio.slice(0,nb).join("/")+(nb?"/":"");
-      var pide=limpio.slice(nb).filter(function(x){return x!=="demo"&&x!=="index.html";});
-      var esDemo=limpio.slice(nb).indexOf("demo")>=0;
-      if(!pide.length){aviso();return;}
-      q.set("ruta",pide[0]+(esDemo?"/demo":""));q.set("pgx404","1");
-      location.replace(raiz+(esDemo?"demo/":"")+"index.html?"+q.toString());
-    }
-    function probar(nb){
-      if(nb>=limpio.length){aviso();return;}
-      var raiz="/"+limpio.slice(0,nb).join("/")+(nb?"/":"");
-      fetch(raiz+"index.pck",{method:"HEAD"}).then(function(r){if(r.ok)ir(nb);else probar(nb+1);}).catch(function(){probar(nb+1);});
-    }
-    probar(0);return;
-  }
-  var base=seg.slice(0,i).join("/")+"/";
-  var resto=seg.slice(i+1).filter(Boolean);
-  var demo=resto.indexOf("demo")>=0;
-  resto=resto.filter(function(x){return x!=="demo";});
-  var ruta=seg[i]+(resto.length?"/"+resto[0]:"")+(demo?"/demo":"");
-  q.set("ruta",ruta);
-  location.replace(base+(demo?"demo/":"")+"index.html?"+q.toString());
-})();
-</script>
-<style>body{display:none;background:#1d1f2b;color:#fff;font:18px system-ui,sans-serif;text-align:center;padding:3em 1em}a{color:#ffd166}</style>
-</head><body><p>Esta página no existe.</p><p><a href="/">Ir a PrayGamex</a></p></body></html>
+<meta name="robots" content="noindex">
+<link rel="canonical" href="https://praygamex.com/">
+<meta http-equiv="refresh" content="0; url=https://praygamex.com/">
+<style>html,body{margin:0;height:100%;background:#101b21;color:#eee5d3;font:17px/1.6 Georgia,serif}
+main{min-height:100%;display:grid;place-items:center;text-align:center;padding:24px}
+a{color:#d9bf88}small{display:block;color:#b9b2a3;font:13px system-ui,sans-serif;margin-top:8px}</style>
+<script>location.replace("https://praygamex.com/");</script>
+</head><body><main><div>Los juegos ahora están en <a href="https://praygamex.com/">PrayGamex</a>.
+<small>Si no te lleva solo, toca el enlace.</small></div></main></body></html>
